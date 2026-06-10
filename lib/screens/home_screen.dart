@@ -26,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     widget.midi.start();
     // Rebuild the status banner when devices connect/disconnect.
-    _setupSub = widget.midi.onSetupChanged?.listen((_) {
+    _setupSub = widget.midi.onSetupChanged.listen((_) {
       if (mounted) setState(() {});
     });
   }
@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Scales',
                 subtitle: 'Play scales from a random key, note by note',
                 icon: Icons.timeline,
-                gradient: const [AppColors.accent, Color(0xFF14B8A6)],
+                gradient: const [AppColors.accent, Color(0xFF1FA396)],
                 onTap: () => _openQuiz(QuizMode.scale),
               ),
               const SizedBox(height: 14),
@@ -83,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Chords',
                 subtitle: 'Build the named chord — hold all the notes at once',
                 icon: Icons.grid_view_rounded,
-                gradient: const [AppColors.accent2, Color(0xFF8B5CF6)],
+                gradient: const [AppColors.accent2, Color(0xFFD98E0B)],
                 onTap: () => _openQuiz(QuizMode.chord),
               ),
             ],
@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
             gradient: AppColors.accentGradient,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.music_note, color: Colors.white, size: 30),
+          child: const Icon(Icons.music_note, color: Color(0xFF06251F), size: 30),
         ),
         const SizedBox(width: 14),
         Column(
@@ -221,7 +221,7 @@ class _ModeCard extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Icon(icon, color: Colors.white, size: 30),
+              child: Icon(icon, color: const Color(0xFF0F141B), size: 30),
             ),
             const SizedBox(width: 16),
             Expanded(

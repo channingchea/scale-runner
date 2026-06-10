@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_midi_command/flutter_midi_command.dart';
 
 /// A single Note On / Note Off event, decoded from the raw MIDI byte stream.
@@ -35,8 +35,21 @@ class MidiService {
   final _noteController = StreamController<MidiNoteEvent>.broadcast();
   final _rawController = StreamController<String>.broadcast();
 
+  /// Rebroadcasts the plugin's single-subscription setup stream so multiple
+  /// screens can listen. We subscribe to the plugin ONCE (in [start]) and fan
+  /// out here; subscribing the plugin stream more than once throws.
+  final _setupController = StreamController<String>.broadcast();
+
   StreamSubscription<MidiPacket>? _rxSub;
+  StreamSubscription<String>? _setupSub;
   MidiDevice? _connected;
+
+  /// Id + name of the last device the user connected to. Retained across
+  /// unplugs so the same keyboard auto-reconnects when it reappears. USB MIDI
+  /// devices often re-enumerate with a fresh id, so we match on either id or
+  /// name. Cleared only by an explicit [disconnect].
+  String? _lastDeviceId;
+  String? _lastDeviceName;
 
   /// Clean stream of decoded Note On/Off events for the quiz to consume.
   Stream<MidiNoteEvent> get noteStream => _noteController.stream;
@@ -47,10 +60,22 @@ class MidiService {
   MidiDevice? get connectedDevice => _connected;
   bool get isConnected => _connected != null;
 
-  /// Begin listening to the global MIDI receive stream. Safe to call once at
-  /// startup; individual devices are then connected via [connect].
+  /// Begin listening to the global MIDI receive + setup streams. Safe to call
+  /// repeatedly; both subscriptions are created once. Subscribing the plugin's
+  /// streams more than once throws, so all fan-out goes through our broadcast
+  /// controllers ([noteStream], [rawStream], [onSetupChanged]).
   void start() {
     _rxSub ??= _midi.onMidiDataReceived?.listen(_handlePacket);
+    _setupSub ??= _midi.onMidiSetupChanged?.listen(_handleSetupChanged);
+  }
+
+  /// Single internal handler for every OS MIDI setup change. Reconciles
+  /// connection state, auto-reconnects a replugged device, then notifies UI.
+  /// Runs regardless of whether any screen is currently listening.
+  Future<void> _handleSetupChanged(String event) async {
+    await refreshConnectionState();
+    await _tryAutoReconnect();
+    if (!_setupController.isClosed) _setupController.add(event);
   }
 
   /// List currently visible MIDI devices (USB + already-paired BLE).
@@ -75,10 +100,52 @@ class MidiService {
     }
   }
 
-  /// Stream of device-change notifications (connect/disconnect/discovery).
-  Stream<String>? get onSetupChanged => _midi.onMidiSetupChanged;
+  /// Broadcast stream of device-change notifications (connect/disconnect/
+  /// discovery). Fans out the single internal subscription set up in [start],
+  /// so any number of screens can listen. Connection-state reconciliation and
+  /// auto-reconnect already ran in [_handleSetupChanged] before each event.
+  Stream<String> get onSetupChanged => _setupController.stream;
+
+  /// Clear [_connected] if the tracked device is no longer present (or now
+  /// reports disconnected) in the live MIDI device list.
+  Future<void> refreshConnectionState() async {
+    if (_connected == null) return;
+    final live = await devices();
+    final stillThere = live.any(
+      (d) => d.id == _connected!.id && d.connected,
+    );
+    if (!stillThere) _connected = null;
+  }
+
+  /// If nothing is connected but the last-used device has reappeared in the
+  /// live list, silently reconnect to it. Lets a replugged keyboard come back
+  /// without the user re-picking it.
+  Future<void> _tryAutoReconnect() async {
+    if (_connected != null || _lastDeviceId == null) return;
+    final live = await devices();
+    MidiDevice? match;
+    for (final d in live) {
+      // Prefer an id match; fall back to name for devices that re-enumerate
+      // with a new id on replug.
+      if (d.id == _lastDeviceId || d.name == _lastDeviceName) {
+        match = d;
+        break;
+      }
+    }
+    if (match != null) await connect(match);
+  }
 
   Future<void> connect(MidiDevice device) async {
+    // On USB replug the device often comes back already connected at the
+    // native layer (our Dart state was cleared on unplug, but the port was
+    // never actually torn down). Re-connecting it throws "Device already
+    // connected", so just adopt it.
+    if (device.connected) {
+      _connected = device;
+      _lastDeviceId = device.id;
+      _lastDeviceName = device.name;
+      return;
+    }
     if (_connected != null) {
       _midi.disconnectDevice(_connected!);
       _connected = null;
@@ -86,15 +153,29 @@ class MidiService {
       // opening a new one — avoids connecting to a device mid-teardown.
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
-    await _midi.connectToDevice(device);
+    try {
+      await _midi.connectToDevice(device);
+    } on PlatformException catch (e) {
+      // Benign race: the native side already opened the port. Treat as success.
+      if (e.code != 'MESSAGEERROR' ||
+          !(e.message?.contains('already connected') ?? false)) {
+        rethrow;
+      }
+    }
     _connected = device;
+    _lastDeviceId = device.id; // remember for auto-reconnect on replug
+    _lastDeviceName = device.name;
   }
 
+  /// Explicit, user-initiated disconnect. Clears [_lastDeviceId] so the device
+  /// will NOT auto-reconnect — only a fresh [connect] re-arms that.
   void disconnect() {
     if (_connected != null) {
       _midi.disconnectDevice(_connected!);
       _connected = null;
     }
+    _lastDeviceId = null;
+    _lastDeviceName = null;
   }
 
   void _handlePacket(MidiPacket packet) {
@@ -120,8 +201,10 @@ class MidiService {
 
   void dispose() {
     _rxSub?.cancel();
+    _setupSub?.cancel();
     disconnect();
     _noteController.close();
     _rawController.close();
+    _setupController.close();
   }
 }

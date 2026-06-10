@@ -65,6 +65,7 @@ class QuizController extends ChangeNotifier {
   late String formulaLabel; // degree notation, e.g. "1-2-b3-4-5-b6-b7"
   late int _rootMidi; // root note for this round
   late List<int> targetNotes; // the notes the user should play (in order)
+  late List<int> _intervals; // formula intervals, one per formula degree
   ScaleValidator? _scaleValidator;
   ChordValidator? _chordValidator;
 
@@ -112,9 +113,29 @@ class QuizController extends ChangeNotifier {
     return KeyFeedback.idle;
   }
 
-  /// Whether [midiNote]'s pitch class is part of the current target (used to
-  /// show a subtle hint and to tint solved notes green).
-  bool isTargetHint(int midiNote) => _isTargetPitchClass(midiNote);
+  /// Whether [midiNote] is one of the exact target notes for this round (used
+  /// to show the blue hint dots). Unlike [feedbackFor]'s pitch-class matching,
+  /// this is octave-specific: dots run from the prompt's root up to the root
+  /// an octave above (scales) or the root-position chord tones (chords).
+  bool isTargetHint(int midiNote) => targetNotes.contains(midiNote);
+
+  /// The formula split into its degrees, e.g. "1-b3-5" -> ["1","b3","5"].
+  List<String> get formulaDegrees => formulaLabel.split('-');
+
+  /// Whether degree [i] of the formula has been played correctly this round.
+  ///
+  /// Mirrors the keyboard: lights as notes land, and clears on a wrong note
+  /// (scale validator reset / solved set cleared do this automatically).
+  bool isDegreeSolved(int i) {
+    if (_roundComplete) return true;
+    if (mode == QuizMode.scale) {
+      // Scales are sequential: the validator's progress count is the number
+      // of leading degrees already played.
+      return i < _scaleValidator!.progress;
+    }
+    if (i >= _intervals.length) return false;
+    return _solvedPcs.contains(pitchClassOf(_rootMidi + _intervals[i]));
+  }
 
   bool _isTargetPitchClass(int midiNote) {
     final pc = pitchClassOf(midiNote);
@@ -125,7 +146,13 @@ class QuizController extends ChangeNotifier {
   }
 
   // ---- Input handlers ----------------------------------------------------
+
+  /// Fired on every key press (tap or MIDI), before any quiz logic — e.g. so
+  /// the metronome can judge the press timing.
+  void Function(int midiNote)? onAnyPress;
+
   void pressKey(int midiNote) {
+    onAnyPress?.call(midiNote);
     // After a win we hold on the green check; the next press advances.
     if (_roundComplete) {
       _nextRound();
@@ -241,6 +268,7 @@ class QuizController extends ChangeNotifier {
       _scaleValidator = ScaleValidator.fromFormula(scale, _rootMidi);
       _chordValidator = null;
       targetNotes = scale.notesFrom(_rootMidi);
+      _intervals = scale.intervals;
       promptLabel = '${pitchClassNames[pitchClassOf(_rootMidi)]} ${scale.name}';
       formulaLabel = scale.formula;
     } else {
@@ -248,6 +276,7 @@ class QuizController extends ChangeNotifier {
       _chordValidator = ChordValidator.fromFormula(chord, _rootMidi);
       _scaleValidator = null;
       targetNotes = chord.notesFrom(_rootMidi);
+      _intervals = chord.intervals;
       promptLabel = '${pitchClassNames[pitchClassOf(_rootMidi)]} ${chord.name}';
       formulaLabel = chord.formula;
     }

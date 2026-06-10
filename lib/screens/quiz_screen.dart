@@ -2,12 +2,12 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
+import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/quiz_settings_sheet.dart';
 
@@ -25,29 +25,24 @@ class QuizScreen extends StatefulWidget {
 class _QuizScreenState extends State<QuizScreen> {
   QuizController? _controller;
   QuizSettings? _settings;
+  MetronomeController? _metronome;
   bool _formulaHint = true;
   bool _dotsHint = true;
   bool _statsBar = true;
+  bool _beatIndicator = true;
 
   // Session score carried across controller rebuilds (e.g. when the user
   // changes which scales/chords are active).
   int _carryScore = 0;
   int _carryBestStreak = 0;
 
-  /// True on phones/tablets, where we lock the keyboard pages to landscape.
+  /// True on phones/tablets (used for sizing tweaks).
   bool get _isMobile =>
       !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
     super.initState();
-    if (_isMobile) {
-      // The keyboard needs width; force landscape while this screen is up.
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
     _bootstrap();
   }
 
@@ -56,6 +51,12 @@ class _QuizScreenState extends State<QuizScreen> {
     final formulaHint = await settings.formulaHintEnabled(widget.mode);
     final dotsHint = await settings.dotsHintEnabled(widget.mode);
     final statsBar = await settings.statsBarEnabled(widget.mode);
+    final beatIndicator = await settings.beatIndicatorEnabled(widget.mode);
+    // The metronome outlives controller rebuilds; tempo persists globally.
+    _metronome = MetronomeController(
+      bpm: await settings.metronomeBpm(),
+      onBpmChanged: settings.setMetronomeBpm,
+    );
     await _rebuildController(settings);
     if (mounted) {
       setState(() {
@@ -63,6 +64,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _formulaHint = formulaHint;
         _dotsHint = dotsHint;
         _statsBar = statsBar;
+        _beatIndicator = beatIndicator;
       });
     }
   }
@@ -78,7 +80,11 @@ class _QuizScreenState extends State<QuizScreen> {
     }
     next
       ..score = _carryScore
-      ..bestStreak = _carryBestStreak;
+      ..bestStreak = _carryBestStreak
+      // Covers taps AND MIDI — both route through pressKey.
+      ..onAnyPress = (_) {
+        if (_beatIndicator) _metronome?.registerHit();
+      };
     next.bindMidi(widget.midi);
     if (!mounted) {
       next.dispose();
@@ -104,16 +110,14 @@ class _QuizScreenState extends State<QuizScreen> {
       onFormulaHintChanged: (on) => setState(() => _formulaHint = on),
       onDotsHintChanged: (on) => setState(() => _dotsHint = on),
       onStatsBarChanged: (on) => setState(() => _statsBar = on),
+      onBeatIndicatorChanged: (on) => setState(() => _beatIndicator = on),
     );
   }
 
   @override
   void dispose() {
-    if (_isMobile) {
-      // Restore the app's default (all orientations) on the way out.
-      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    }
     _controller?.dispose();
+    _metronome?.dispose();
     super.dispose();
   }
 
@@ -184,6 +188,8 @@ class _QuizScreenState extends State<QuizScreen> {
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             const Spacer(),
+            if (_metronome != null) MetronomeBar(controller: _metronome!),
+            const Spacer(),
             Icon(
               widget.midi.isConnected ? Icons.piano : Icons.touch_app,
               color: widget.midi.isConnected
@@ -192,7 +198,7 @@ class _QuizScreenState extends State<QuizScreen> {
               size: 20,
             ),
             IconButton(
-              icon: const Icon(Icons.tune),
+              icon: const Icon(Icons.settings),
               color: AppColors.textPrimary,
               tooltip: 'Choose ${_modeLabel.toLowerCase()} to practice',
               onPressed: _openSettings,
@@ -229,12 +235,19 @@ class _QuizScreenState extends State<QuizScreen> {
         ),
         child: Column(
           children: [
-            Text(value,
-                style: TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary)),
+            // Shrink to fit narrow cards (portrait phones) instead of clipping.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(value,
+                  style: TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+            ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textSecondary)),
+            ),
           ],
         ),
       ),
@@ -307,17 +320,38 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
             if (_formulaHint) ...[
               const SizedBox(height: 10),
+              // Each degree lights up teal as its note is played correctly;
+              // a wrong note clears the lot (in sync with the keyboard).
               FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(
-                  c.formulaLabel,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                    letterSpacing: 1.5,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < c.formulaDegrees.length; i++) ...[
+                      if (i > 0)
+                        const Text(
+                          '-',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 150),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
+                          color: c.isDegreeSolved(i)
+                              ? AppColors.accent
+                              : AppColors.textSecondary,
+                        ),
+                        child: Text(c.formulaDegrees[i]),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],

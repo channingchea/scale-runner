@@ -1,43 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-/// Central design system for Scale Runner.
+/// Central design system for Scale Runner — see BRAND_GUIDE.md.
 ///
-/// Dark, modern, vibrant: a deep slate canvas, a teal→indigo accent, large
-/// rounded cards, and a clearly-defined palette for the keyboard's feedback
-/// states (target / correct / wrong) so the whole app stays consistent.
+/// Focused & modern, dark-first. Blue-slate canvas (never pure black) with
+/// "Resonance Teal" as the single accent and warm amber for streaks. The
+/// keyboard palette is theme-stable: ivory whites, beveled slate-blacks, and
+/// a felt rail so keys never blend into the background.
 class AppColors {
   AppColors._();
 
-  // Canvas
-  static const Color bg = Color(0xFF0E1117); // deep slate
-  static const Color surface = Color(0xFF171B23); // cards
-  static const Color surfaceHigh = Color(0xFF1F2530); // raised cards
-  static const Color border = Color(0xFF2A3140);
+  // Canvas (dark theme)
+  static const Color bg = Color(0xFF0F141B); // blue-slate, never #000
+  static const Color surface = Color(0xFF171E28); // cards
+  static const Color surfaceHigh = Color(0xFF1F2835); // raised cards / tray
+  static const Color border = Color(0xFF2C3645);
 
-  // Accent gradient (teal → indigo)
-  static const Color accent = Color(0xFF2DD4BF); // teal
-  static const Color accent2 = Color(0xFF6366F1); // indigo
+  // Accents
+  static const Color accent = Color(0xFF36D6C3); // Resonance Teal (primary)
+  static const Color accent2 = Color(0xFFF5A524); // warm amber (streaks)
   static const LinearGradient accentGradient = LinearGradient(
-    colors: [accent, accent2],
+    colors: [accent, Color(0xFF1FA396)], // teal → deep teal (single-hue brand)
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   // Text
-  static const Color textPrimary = Color(0xFFF1F5F9);
-  static const Color textSecondary = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
+  static const Color textPrimary = Color(0xFFE8ECF1); // never pure white
+  static const Color textSecondary = Color(0xFF94A1B2);
+  static const Color textMuted = Color(0xFF5B6878);
 
   // Feedback states (shared by keyboard + quiz UI)
-  static const Color correct = Color(0xFF34D399); // green glow
-  static const Color wrong = Color(0xFFF87171); // red
-  static const Color target = Color(0xFF38BDF8); // sky-blue hint
+  static const Color correct = Color(0xFF4ADE80);
+  static const Color wrong = Color(0xFFF4717F); // rose, easier on the eyes
+  static const Color target = Color(0xFF36D6C3); // teal hint = play this next
 
-  // Keyboard
-  static const Color whiteKey = Color(0xFFF8FAFC);
-  static const Color whiteKeyShadow = Color(0xFFCBD5E1);
-  static const Color blackKey = Color(0xFF1E232C);
-  static const Color blackKeyTop = Color(0xFF2E3543);
+  // Keyboard (theme-stable — identical in any future light theme)
+  static const Color whiteKey = Color(0xFFF4F1EA); // ivory, never pure white
+  static const Color whiteKeyShadow = Color(0xFFC9C3B6);
+  static const Color blackKey = Color(0xFF262B33); // lighter than bg
+  static const Color blackKeyTop = Color(0xFF3A414C); // bevel separates from bg
+  static const Color felt = Color(0xFF8E3B46); // felt rail above the keys
 }
 
 class AppTheme {
@@ -46,47 +49,86 @@ class AppTheme {
   static ThemeData get dark {
     final base = ThemeData.dark(useMaterial3: true);
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.accent2,
+      seedColor: AppColors.accent,
       brightness: Brightness.dark,
     ).copyWith(
       surface: AppColors.surface,
       primary: AppColors.accent,
+      onPrimary: const Color(0xFF06251F),
       secondary: AppColors.accent2,
+      onSecondary: const Color(0xFF2A1B00),
       error: AppColors.wrong,
+      outline: AppColors.border,
+      onSurface: AppColors.textPrimary,
+      onSurfaceVariant: AppColors.textSecondary,
+    );
+
+    final text = GoogleFonts.interTextTheme(base.textTheme).apply(
+      bodyColor: AppColors.textPrimary,
+      displayColor: AppColors.textPrimary,
     );
 
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.bg,
       colorScheme: scheme,
-      textTheme: base.textTheme.apply(
-        bodyColor: AppColors.textPrimary,
-        displayColor: AppColors.textPrimary,
+      textTheme: text.copyWith(
+        // Display/title: Space Grotesk for a modern, slightly technical feel.
+        displayLarge: GoogleFonts.spaceGrotesk(
+          fontSize: 32,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
+        headlineMedium: GoogleFonts.spaceGrotesk(
+          fontSize: 26,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
+        titleLarge: GoogleFonts.spaceGrotesk(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: AppColors.bg,
         elevation: 0,
         centerTitle: false,
         foregroundColor: AppColors.textPrimary,
+        titleTextStyle: GoogleFonts.spaceGrotesk(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: AppColors.border),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.accent2,
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.accent,
+          foregroundColor: const Color(0xFF06251F),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(8),
           ),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          textStyle: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.border,
+        thickness: 1,
       ),
     );
   }
 }
+
+/// Tabular figures for tempo/score/timer text — prevents number jitter.
+const List<FontFeature> tabularFigures = [FontFeature.tabularFigures()];

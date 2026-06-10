@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -22,20 +24,29 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   List<MidiDevice> _devices = [];
   final List<String> _log = [];
   bool _loading = false;
+  final List<StreamSubscription> _subs = [];
 
   @override
   void initState() {
     super.initState();
     widget.midi.start();
-    widget.midi.noteStream.listen((e) => _append(e.toString()));
-    widget.midi.rawStream.listen((raw) => _append('raw: $raw'));
+    _subs.add(widget.midi.noteStream.listen((e) => _append(e.toString())));
+    _subs.add(widget.midi.rawStream.listen((raw) => _append('raw: $raw')));
     // Re-scan whenever the OS reports a MIDI setup change (a BLE device
     // finishing discovery fires this) so newly-found keyboards appear.
-    widget.midi.onSetupChanged?.listen((event) {
+    _subs.add(widget.midi.onSetupChanged.listen((event) {
       _append('setup changed: $event');
       _refresh();
-    });
+    }));
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
   }
 
   void _append(String line) {
@@ -149,7 +160,7 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.black,
+                  color: const Color(0xFF0A0E13), // console: darker slate, never pure black
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppColors.border),
                 ),

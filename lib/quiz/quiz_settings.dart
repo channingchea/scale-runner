@@ -26,6 +26,11 @@ class QuizSettings {
   static String _statsBarKeyFor(QuizMode mode) =>
       mode == QuizMode.scale ? 'stats_bar_scales' : 'stats_bar_chords';
 
+  static String _beatIndicatorKeyFor(QuizMode mode) =>
+      mode == QuizMode.scale ? 'beat_indicator_scales' : 'beat_indicator_chords';
+
+  static const _metronomeBpmKey = 'metronome_bpm';
+
   static Future<QuizSettings> load() async =>
       QuizSettings._(SharedPreferencesAsync());
 
@@ -67,6 +72,22 @@ class QuizSettings {
 
   Future<void> setStatsBarEnabled(QuizMode mode, bool on) async {
     await _prefs.setBool(_statsBarKeyFor(mode), on);
+  }
+
+  /// Whether the BPM readout flashes with key-press timing for [mode]. Default on.
+  Future<bool> beatIndicatorEnabled(QuizMode mode) async =>
+      await _prefs.getBool(_beatIndicatorKeyFor(mode)) ?? true;
+
+  Future<void> setBeatIndicatorEnabled(QuizMode mode, bool on) async {
+    await _prefs.setBool(_beatIndicatorKeyFor(mode), on);
+  }
+
+  /// The metronome tempo, shared across modes. Default 100.
+  Future<int> metronomeBpm() async =>
+      await _prefs.getInt(_metronomeBpmKey) ?? 100;
+
+  Future<void> setMetronomeBpm(int bpm) async {
+    await _prefs.setInt(_metronomeBpmKey, bpm);
   }
 
   /// The enabled [ScaleFormula]s (preserving library order). Falls back to the

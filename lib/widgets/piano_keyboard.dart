@@ -59,7 +59,9 @@ class PianoKeyboard extends StatelessWidget {
       if (!_isWhite(n)) blackNotes.add(n);
     }
 
-    return LayoutBuilder(
+    // Felt rail above the keys (like a real piano) — anchors the keyboard
+    // visually so black keys never blend into the dark background.
+    final keys = LayoutBuilder(
       builder: (context, constraints) {
         // Each white key adds 0.5px margin on both sides (1px total). Subtract
         // that from the available width before dividing so the row fits exactly.
@@ -111,6 +113,19 @@ class PianoKeyboard extends StatelessWidget {
           ],
         );
       },
+    );
+
+    return Column(
+      children: [
+        Container(
+          height: 7,
+          decoration: const BoxDecoration(
+            color: AppColors.felt,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(3)),
+          ),
+        ),
+        Expanded(child: keys),
+      ],
     );
   }
 }

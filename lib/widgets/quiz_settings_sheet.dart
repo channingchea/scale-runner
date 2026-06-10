@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -16,6 +18,7 @@ class QuizSettingsSheet extends StatefulWidget {
     required this.onFormulaHintChanged,
     required this.onDotsHintChanged,
     required this.onStatsBarChanged,
+    required this.onBeatIndicatorChanged,
   });
 
   final QuizMode mode;
@@ -33,6 +36,9 @@ class QuizSettingsSheet extends StatefulWidget {
   /// Called whenever the stats-bar toggle changes.
   final ValueChanged<bool> onStatsBarChanged;
 
+  /// Called whenever the metronome beat-indicator toggle changes.
+  final ValueChanged<bool> onBeatIndicatorChanged;
+
   /// Convenience opener.
   static Future<void> show(
     BuildContext context, {
@@ -42,6 +48,7 @@ class QuizSettingsSheet extends StatefulWidget {
     required ValueChanged<bool> onFormulaHintChanged,
     required ValueChanged<bool> onDotsHintChanged,
     required ValueChanged<bool> onStatsBarChanged,
+    required ValueChanged<bool> onBeatIndicatorChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -57,6 +64,7 @@ class QuizSettingsSheet extends StatefulWidget {
         onFormulaHintChanged: onFormulaHintChanged,
         onDotsHintChanged: onDotsHintChanged,
         onStatsBarChanged: onStatsBarChanged,
+        onBeatIndicatorChanged: onBeatIndicatorChanged,
       ),
     );
   }
@@ -71,6 +79,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
   bool _formulaHint = true;
   bool _dotsHint = true;
   bool _statsBar = true;
+  bool _beatIndicator = true;
   bool _loading = true;
 
   bool get _isScale => widget.mode == QuizMode.scale;
@@ -87,12 +96,15 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     final formulaHint = await widget.settings.formulaHintEnabled(widget.mode);
     final dotsHint = await widget.settings.dotsHintEnabled(widget.mode);
     final statsBar = await widget.settings.statsBarEnabled(widget.mode);
+    final beatIndicator =
+        await widget.settings.beatIndicatorEnabled(widget.mode);
     if (!mounted) return;
     setState(() {
       _enabled = enabled;
       _formulaHint = formulaHint;
       _dotsHint = dotsHint;
       _statsBar = statsBar;
+      _beatIndicator = beatIndicator;
       _loading = false;
     });
   }
@@ -115,12 +127,71 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     widget.onStatsBarChanged(on);
   }
 
+  Future<void> _toggleBeatIndicator(bool on) async {
+    setState(() => _beatIndicator = on);
+    await widget.settings.setBeatIndicatorEnabled(widget.mode, on);
+    widget.onBeatIndicatorChanged(on);
+  }
+
+  OverlayEntry? _toast;
+  Timer? _toastTimer;
+
+  /// Shows a brief toast in the root overlay, which paints above every route —
+  /// including this modal sheet. (A SnackBar lives in the root Scaffold, so it
+  /// would render *behind* the sheet.)
+  void _showToast(String message) {
+    _toast?.remove();
+    _toastTimer?.cancel();
+    final entry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: 24,
+        right: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+        child: IgnorePointer(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black54, blurRadius: 12),
+                ],
+              ),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(entry);
+    _toast = entry;
+    _toastTimer = Timer(const Duration(seconds: 2), () {
+      entry.remove();
+      if (_toast == entry) _toast = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _toastTimer?.cancel();
+    _toast?.remove();
+    super.dispose();
+  }
+
   Future<void> _toggle(String name, bool on) async {
     // Never allow the last enabled item to be turned off.
     if (!on && _enabled.length == 1 && _enabled.contains(name)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Keep at least one selected')),
-      );
+      _showToast('Keep at least one selected');
       return;
     }
     setState(() {
@@ -163,7 +234,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
                     const TabBar(
                       labelColor: AppColors.textPrimary,
                       unselectedLabelColor: AppColors.textSecondary,
-                      indicatorColor: AppColors.accent2,
+                      indicatorColor: AppColors.accent,
                       tabs: [
                         Tab(text: 'Practice'),
                         Tab(text: 'Challenge'),
@@ -234,33 +305,89 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
           child: ListView(
             shrinkWrap: true,
             padding: const EdgeInsets.only(bottom: 8),
-            children: [
-              for (final name in _all)
-                SwitchListTile(
-                  value: _enabled.contains(name),
-                  onChanged: (v) => _toggle(name, v),
-                  title: Text(
-                    name,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w500),
-                  ),
-                  activeThumbColor: Colors.white,
-                  activeTrackColor: AppColors.accent2,
-                  inactiveThumbColor: AppColors.textMuted,
-                  inactiveTrackColor: AppColors.surfaceHigh,
-                ),
-            ],
+            children: _isScale ? _groupedScaleTiles() : _flatTiles(_all),
           ),
         ),
       ],
     );
   }
 
+  /// Scale names grouped and ordered by scale degree. Names must match those in
+  /// `commonScales`; any not listed here are appended so nothing is dropped.
+  static const List<String> _majorScaleModes = [
+    'Major (Ionian)',
+    'Dorian',
+    'Phrygian',
+    'Lydian',
+    'Mixolydian',
+    'Natural Minor (Aeolian)',
+    'Locrian',
+  ];
+  static const List<String> _miscScales = [
+    'Harmonic Minor',
+    'Melodic Minor (asc)',
+    'Major Pentatonic',
+    'Minor Pentatonic',
+    'Blues',
+    'Chromatic',
+  ];
+
+  List<Widget> _groupedScaleTiles() {
+    final known = {..._majorScaleModes, ..._miscScales};
+    final leftover = _all.where((n) => !known.contains(n)).toList();
+    return [
+      _sectionHeader('Major Scale Modes'),
+      ..._flatTiles(_majorScaleModes.where(_all.contains)),
+      _sectionDivider(),
+      _sectionHeader('Misc. Scales'),
+      ..._flatTiles(_miscScales.where(_all.contains)),
+      if (leftover.isNotEmpty) ..._flatTiles(leftover),
+    ];
+  }
+
+  List<Widget> _flatTiles(Iterable<String> names) => [
+        for (final name in names)
+          SwitchListTile(
+            value: _enabled.contains(name),
+            onChanged: (v) => _toggle(name, v),
+            title: Text(
+              name,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+            ),
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppColors.accent,
+            inactiveThumbColor: AppColors.textMuted,
+            inactiveTrackColor: AppColors.surfaceHigh,
+          ),
+      ];
+
+  Widget _sectionHeader(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+        child: Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
+
+  Widget _sectionDivider() => const Divider(
+        height: 16,
+        thickness: 1,
+        indent: 20,
+        endIndent: 20,
+        color: AppColors.border,
+      );
+
   Widget _challengeTab() {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
+        _sectionHeader('Hints'),
         _hintSwitch(
           value: _formulaHint,
           onChanged: _toggleFormulaHint,
@@ -273,11 +400,20 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
           title: 'Show key dots',
           subtitle: 'The blue dots marking which keys to play',
         ),
+        _sectionDivider(),
+        _sectionHeader('Performance'),
         _hintSwitch(
           value: _statsBar,
           onChanged: _toggleStatsBar,
           title: 'Show stats bar',
           subtitle: 'The score, streak, and best row at the top',
+        ),
+        _hintSwitch(
+          value: _beatIndicator,
+          onChanged: _toggleBeatIndicator,
+          title: 'Beat indicator',
+          subtitle:
+              'Flash the metronome BPM green/amber/red with your key timing',
         ),
       ],
     );
@@ -302,7 +438,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
       ),
       activeThumbColor: Colors.white,
-      activeTrackColor: AppColors.accent2,
+      activeTrackColor: AppColors.accent,
       inactiveThumbColor: AppColors.textMuted,
       inactiveTrackColor: AppColors.surfaceHigh,
     );
