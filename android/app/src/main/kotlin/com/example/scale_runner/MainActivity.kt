@@ -1,5 +1,0 @@
-package com.example.scale_runner
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity : FlutterActivity()

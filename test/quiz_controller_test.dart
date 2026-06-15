@@ -90,14 +90,17 @@ void main() {
     });
   });
 
-  test('skip advances without scoring and clears streak', () {
+  test('resetStats zeros score, streak, and best streak', () {
     final c = QuizController(mode: QuizMode.scale, seed: 5);
-    final first = c.promptLabel;
-    c.skip();
+    // Win a round to accumulate stats.
+    for (final n in c.targetNotes) {
+      c.pressKey(n);
+    }
+    expect(c.score, 1);
+    expect(c.bestStreak, 1);
+    c.resetStats();
     expect(c.score, 0);
     expect(c.streak, 0);
-    // New round presented (label may or may not differ, but attempt count grows).
-    expect(c.attempts, greaterThanOrEqualTo(2));
-    expect(first, isNotEmpty);
+    expect(c.bestStreak, 0);
   });
 }

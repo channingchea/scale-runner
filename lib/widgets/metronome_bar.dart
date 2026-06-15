@@ -21,6 +21,10 @@ class MetronomeController extends ChangeNotifier {
   /// Reports tempo changes (e.g. to persist them).
   final ValueChanged<int>? onBpmChanged;
 
+  /// Fired on every audible tick — lets a beat-driven drill (Scale Running)
+  /// share this exact clock so judged beats and the click never drift apart.
+  void Function()? onBeat;
+
   int _bpm;
   bool _running = false;
   Timer? _timer;
@@ -41,6 +45,16 @@ class MetronomeController extends ChangeNotifier {
   BeatAccuracy? get flash => _flash;
 
   int get _periodMs => 60000 ~/ _bpm;
+
+  /// Beat period in ms at the current tempo (for external timing judgment).
+  int get beatPeriodMs => _periodMs;
+
+  /// Milliseconds since the most recent tick (0 when not yet ticking).
+  int get msSinceLastTick {
+    final last = _lastTick;
+    if (last == null) return 0;
+    return DateTime.now().difference(last).inMilliseconds;
+  }
 
   void toggle() => _running ? stop() : start();
 
@@ -99,6 +113,7 @@ class MetronomeController extends ChangeNotifier {
       ..seek(Duration.zero)
       ..resume();
     HapticFeedback.lightImpact();
+    onBeat?.call();
   }
 
   @override

@@ -151,6 +151,9 @@ class QuizController extends ChangeNotifier {
   /// the metronome can judge the press timing.
   void Function(int midiNote)? onAnyPress;
 
+  /// Fired after score/bestStreak change on a win — e.g. to persist them.
+  void Function()? onStatsChanged;
+
   void pressKey(int midiNote) {
     onAnyPress?.call(midiNote);
     // After a win we hold on the green check; the next press advances.
@@ -243,14 +246,18 @@ class QuizController extends ChangeNotifier {
     score++;
     streak++;
     if (streak > bestStreak) bestStreak = streak;
+    onStatsChanged?.call();
     notifyListeners();
     // Hold here on the green check; the next key press calls _nextRound.
   }
 
-  /// Skip the current prompt without scoring (breaks the streak).
-  void skip() {
+  /// Zero the session stats. Does not fire [onStatsChanged] (which signals a
+  /// win) — callers persist the reset themselves.
+  void resetStats() {
+    score = 0;
     streak = 0;
-    _nextRound();
+    bestStreak = 0;
+    notifyListeners();
   }
 
   void _nextRound() {

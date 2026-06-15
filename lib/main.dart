@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
 import 'midi/midi_service.dart';
 import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   runApp(const ScaleRunnerApp());
@@ -38,7 +39,7 @@ class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
       title: 'Scale Runner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: HomeScreen(midi: _midi),
+      home: SplashScreen(child: HomeScreen(midi: _midi)),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theory/music_theory.dart';
+import '../theory/scale_running.dart';
 import 'quiz_controller.dart';
 
 /// Persists which scale / chord formulas the user wants to drill.
@@ -30,6 +31,21 @@ class QuizSettings {
       mode == QuizMode.scale ? 'beat_indicator_scales' : 'beat_indicator_chords';
 
   static const _metronomeBpmKey = 'metronome_bpm';
+  static const _noteSoundKey = 'note_sound';
+  static const _introSeenKey = 'intro_seen';
+
+  static String _scoreKeyFor(QuizMode mode) =>
+      mode == QuizMode.scale ? 'score_scales' : 'score_chords';
+
+  static String _bestStreakKeyFor(QuizMode mode) =>
+      mode == QuizMode.scale ? 'best_streak_scales' : 'best_streak_chords';
+
+  // Scale Running drill.
+  static const _runChordsKey = 'run_chords';
+  static const _runProgressionKey = 'run_progression';
+  static const _runIncrementKey = 'run_increment';
+  static const _runSeventhsKey = 'run_sevenths';
+  static const _runStartKeyKey = 'run_start_key';
 
   static Future<QuizSettings> load() async =>
       QuizSettings._(SharedPreferencesAsync());
@@ -82,12 +98,93 @@ class QuizSettings {
     await _prefs.setBool(_beatIndicatorKeyFor(mode), on);
   }
 
+  /// Whether the first-run welcome sheet has been shown.
+  Future<bool> introSeen() async =>
+      await _prefs.getBool(_introSeenKey) ?? false;
+
+  Future<void> setIntroSeen() async {
+    await _prefs.setBool(_introSeenKey, true);
+  }
+
+  /// Whether key presses sound a piano note, shared across modes. Default on.
+  Future<bool> noteSoundEnabled() async =>
+      await _prefs.getBool(_noteSoundKey) ?? true;
+
+  Future<void> setNoteSoundEnabled(bool on) async {
+    await _prefs.setBool(_noteSoundKey, on);
+  }
+
+  /// Lifetime score for [mode], persisted across navigation and launches.
+  Future<int> quizScore(QuizMode mode) async =>
+      await _prefs.getInt(_scoreKeyFor(mode)) ?? 0;
+
+  /// Best streak for [mode], persisted across navigation and launches.
+  Future<int> quizBestStreak(QuizMode mode) async =>
+      await _prefs.getInt(_bestStreakKeyFor(mode)) ?? 0;
+
+  Future<void> setQuizStats(QuizMode mode, int score, int bestStreak) async {
+    await _prefs.setInt(_scoreKeyFor(mode), score);
+    await _prefs.setInt(_bestStreakKeyFor(mode), bestStreak);
+  }
+
   /// The metronome tempo, shared across modes. Default 100.
   Future<int> metronomeBpm() async =>
       await _prefs.getInt(_metronomeBpmKey) ?? 100;
 
   Future<void> setMetronomeBpm(int bpm) async {
     await _prefs.setInt(_metronomeBpmKey, bpm);
+  }
+
+  // ---- Scale Running drill settings ----
+
+  /// Whether the drill follows a chord progression (vs scale runs only).
+  /// Default on.
+  Future<bool> runChordsEnabled() async =>
+      await _prefs.getBool(_runChordsKey) ?? true;
+
+  Future<void> setRunChordsEnabled(bool on) async {
+    await _prefs.setBool(_runChordsKey, on);
+  }
+
+  /// The selected progression, resolved by name. Defaults to the first preset.
+  Future<ChordProgression> runProgression() async {
+    final name = await _prefs.getString(_runProgressionKey);
+    return commonProgressions.firstWhere(
+      (p) => p.name == name,
+      orElse: () => commonProgressions.first,
+    );
+  }
+
+  Future<void> setRunProgressionName(String name) async {
+    await _prefs.setString(_runProgressionKey, name);
+  }
+
+  /// How the key advances after each progression pass. Default fifths.
+  Future<KeyIncrement> runKeyIncrement() async {
+    final stored = await _prefs.getString(_runIncrementKey);
+    return stored == KeyIncrement.chromatic.name
+        ? KeyIncrement.chromatic
+        : KeyIncrement.fifths;
+  }
+
+  Future<void> setRunKeyIncrement(KeyIncrement increment) async {
+    await _prefs.setString(_runIncrementKey, increment.name);
+  }
+
+  /// Pitch class (0–11) the drill starts in. Default 0 (C).
+  Future<int> runStartKeyPc() async =>
+      (await _prefs.getInt(_runStartKeyKey) ?? 0).clamp(0, 11);
+
+  Future<void> setRunStartKeyPc(int pc) async {
+    await _prefs.setInt(_runStartKeyKey, pc % 12);
+  }
+
+  /// Stack diatonic 7th chords instead of triads. Default off (triads).
+  Future<bool> runSevenths() async =>
+      await _prefs.getBool(_runSeventhsKey) ?? false;
+
+  Future<void> setRunSevenths(bool on) async {
+    await _prefs.setBool(_runSeventhsKey, on);
   }
 
   /// The enabled [ScaleFormula]s (preserving library order). Falls back to the

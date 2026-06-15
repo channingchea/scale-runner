@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
+import '../quiz/quiz_settings.dart';
+import '../widgets/welcome_sheet.dart';
 import 'quiz_screen.dart';
+import 'scale_run_screen.dart';
 import 'midi_monitor_screen.dart';
 
 /// Landing screen: pick a practice mode, see MIDI status, open the monitor.
@@ -24,11 +27,21 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    widget.midi.start();
+    // MidiService is started once in main.dart; here we only listen.
     // Rebuild the status banner when devices connect/disconnect.
     _setupSub = widget.midi.onSetupChanged.listen((_) {
       if (mounted) setState(() {});
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowIntro());
+  }
+
+  /// Show the welcome sheet once, on the very first launch.
+  Future<void> _maybeShowIntro() async {
+    final settings = await QuizSettings.load();
+    if (await settings.introSeen()) return;
+    await settings.setIntroSeen();
+    if (!mounted) return;
+    WelcomeSheet.show(context);
   }
 
   @override
@@ -81,10 +94,23 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 14),
               _ModeCard(
                 title: 'Chords',
-                subtitle: 'Build the named chord — hold all the notes at once',
+                subtitle: 'Build the named chord, holding all the notes at once',
                 icon: Icons.grid_view_rounded,
                 gradient: const [AppColors.accent2, Color(0xFFD98E0B)],
                 onTap: () => _openQuiz(QuizMode.chord),
+              ),
+              const SizedBox(height: 14),
+              _ModeCard(
+                title: 'Scale Running',
+                subtitle:
+                    'Hold chords and run their modes in time, key by key',
+                icon: Icons.directions_run,
+                gradient: const [AppColors.correct, Color(0xFF2E9C5C)],
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ScaleRunScreen(midi: widget.midi),
+                  ),
+                ),
               ),
             ],
           ),
@@ -96,14 +122,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            gradient: AppColors.accentGradient,
-            borderRadius: BorderRadius.circular(16),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.asset(
+            'assets/icon/app_icon.png',
+            width: 52,
+            height: 52,
+            fit: BoxFit.cover,
           ),
-          child: const Icon(Icons.music_note, color: Color(0xFF06251F), size: 30),
         ),
         const SizedBox(width: 14),
         Column(
@@ -123,6 +149,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Train your scales & chords',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
           ],
+        ),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.help_outline),
+          color: AppColors.textSecondary,
+          tooltip: 'How it works',
+          onPressed: () => WelcomeSheet.show(context),
         ),
       ],
     );
@@ -166,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     connected
                         ? (name ?? 'Keyboard')
-                        : 'Tap to connect — or just use the on-screen keys',
+                        : 'Tap to connect or just use the on-screen keys',
                     style: const TextStyle(
                         color: AppColors.textSecondary, fontSize: 12),
                   ),

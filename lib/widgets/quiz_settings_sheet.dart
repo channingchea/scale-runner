@@ -19,6 +19,8 @@ class QuizSettingsSheet extends StatefulWidget {
     required this.onDotsHintChanged,
     required this.onStatsBarChanged,
     required this.onBeatIndicatorChanged,
+    required this.onNoteSoundChanged,
+    required this.onResetStats,
   });
 
   final QuizMode mode;
@@ -39,6 +41,12 @@ class QuizSettingsSheet extends StatefulWidget {
   /// Called whenever the metronome beat-indicator toggle changes.
   final ValueChanged<bool> onBeatIndicatorChanged;
 
+  /// Called whenever the note-sound toggle changes.
+  final ValueChanged<bool> onNoteSoundChanged;
+
+  /// Called when the user confirms a stats reset.
+  final VoidCallback onResetStats;
+
   /// Convenience opener.
   static Future<void> show(
     BuildContext context, {
@@ -49,6 +57,8 @@ class QuizSettingsSheet extends StatefulWidget {
     required ValueChanged<bool> onDotsHintChanged,
     required ValueChanged<bool> onStatsBarChanged,
     required ValueChanged<bool> onBeatIndicatorChanged,
+    required ValueChanged<bool> onNoteSoundChanged,
+    required VoidCallback onResetStats,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -65,6 +75,8 @@ class QuizSettingsSheet extends StatefulWidget {
         onDotsHintChanged: onDotsHintChanged,
         onStatsBarChanged: onStatsBarChanged,
         onBeatIndicatorChanged: onBeatIndicatorChanged,
+        onNoteSoundChanged: onNoteSoundChanged,
+        onResetStats: onResetStats,
       ),
     );
   }
@@ -80,6 +92,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
   bool _dotsHint = true;
   bool _statsBar = true;
   bool _beatIndicator = true;
+  bool _noteSound = true;
   bool _loading = true;
 
   bool get _isScale => widget.mode == QuizMode.scale;
@@ -98,6 +111,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     final statsBar = await widget.settings.statsBarEnabled(widget.mode);
     final beatIndicator =
         await widget.settings.beatIndicatorEnabled(widget.mode);
+    final noteSound = await widget.settings.noteSoundEnabled();
     if (!mounted) return;
     setState(() {
       _enabled = enabled;
@@ -105,6 +119,7 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
       _dotsHint = dotsHint;
       _statsBar = statsBar;
       _beatIndicator = beatIndicator;
+      _noteSound = noteSound;
       _loading = false;
     });
   }
@@ -131,6 +146,12 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     setState(() => _beatIndicator = on);
     await widget.settings.setBeatIndicatorEnabled(widget.mode, on);
     widget.onBeatIndicatorChanged(on);
+  }
+
+  Future<void> _toggleNoteSound(bool on) async {
+    setState(() => _noteSound = on);
+    await widget.settings.setNoteSoundEnabled(on);
+    widget.onNoteSoundChanged(on);
   }
 
   OverlayEntry? _toast;
@@ -415,8 +436,59 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
           subtitle:
               'Flash the metronome BPM green/amber/red with your key timing',
         ),
+        ListTile(
+          leading: const Icon(Icons.restart_alt, color: AppColors.textSecondary),
+          title: const Text(
+            'Reset stats',
+            style: TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+          ),
+          subtitle: const Text(
+            'Set score and best streak back to zero',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          onTap: _confirmResetStats,
+        ),
+        _sectionDivider(),
+        _sectionHeader('Sound'),
+        _hintSwitch(
+          value: _noteSound,
+          onChanged: _toggleNoteSound,
+          title: 'Note sound',
+          subtitle: 'Play a piano tone when you press a key '
+              '(turn off if your keyboard has its own sound)',
+        ),
       ],
     );
+  }
+
+  Future<void> _confirmResetStats() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceHigh,
+        title: const Text('Reset stats?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'Your ${_isScale ? "scale" : "chord"} score and best streak will '
+          'go back to zero. This can\'t be undone.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    widget.onResetStats();
+    _showToast('Stats reset');
   }
 
   Widget _hintSwitch({

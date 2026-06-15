@@ -1,16 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
+import '../theory/music_theory.dart';
 
 // flutter_midi_command's MidiDevice, surfaced only here for the picker.
 import 'package:flutter_midi_command/flutter_midi_command.dart' show MidiDevice;
 
-/// Phase-1 spike turned into a permanent debug tool: lists MIDI devices, lets
-/// you connect, and prints the live incoming Note On/Off + raw byte stream.
-/// Handy for confirming a keyboard works before (or after) drilling scales.
+/// MIDI device screen: lists devices, lets you connect (USB or Bluetooth),
+/// and shows the last note played so you can confirm a keyboard works.
+/// In debug builds it also shows the raw incoming packet log.
 class MidiMonitorScreen extends StatefulWidget {
   const MidiMonitorScreen({super.key, required this.midi});
 
@@ -22,7 +24,8 @@ class MidiMonitorScreen extends StatefulWidget {
 
 class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   List<MidiDevice> _devices = [];
-  final List<String> _log = [];
+  String? _lastNote;
+  final List<String> _log = []; // debug builds only
   bool _loading = false;
   final List<StreamSubscription> _subs = [];
 
@@ -30,12 +33,17 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   void initState() {
     super.initState();
     widget.midi.start();
-    _subs.add(widget.midi.noteStream.listen((e) => _append(e.toString())));
-    _subs.add(widget.midi.rawStream.listen((raw) => _append('raw: $raw')));
+    _subs.add(widget.midi.noteStream.listen((e) {
+      if (e.isOn) _setLastNote(noteName(e.note));
+      if (kDebugMode) _append(e.toString());
+    }));
+    if (kDebugMode) {
+      _subs.add(widget.midi.rawStream.listen((raw) => _append('raw: $raw')));
+    }
     // Re-scan whenever the OS reports a MIDI setup change (a BLE device
     // finishing discovery fires this) so newly-found keyboards appear.
     _subs.add(widget.midi.onSetupChanged.listen((event) {
-      _append('setup changed: $event');
+      if (kDebugMode) _append('setup changed: $event');
       _refresh();
     }));
     _refresh();
@@ -47,6 +55,11 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
       s.cancel();
     }
     super.dispose();
+  }
+
+  void _setLastNote(String name) {
+    if (!mounted) return;
+    setState(() => _lastNote = name);
   }
 
   void _append(String line) {
@@ -77,10 +90,8 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   }
 
   Future<void> _pairBluetooth() async {
-    _append('--- tapped Bluetooth pair ---');
     try {
       await widget.midi.startBluetoothCentral();
-      _append('central started, scanning for BLE MIDI…');
       await _refresh();
       // BLE discovery is async; the immediate scan above is usually too early.
       // Rescan a few times over the next several seconds to catch the device.
@@ -90,7 +101,6 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
         });
       }
     } catch (e, st) {
-      _append('Bluetooth ERROR: $e');
       debugPrint('Bluetooth pairing failed: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +113,7 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MIDI Monitor'),
+        title: const Text('MIDI Devices'),
         actions: [
           IconButton(
             icon: const Icon(Icons.bluetooth),
@@ -153,42 +163,89 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
               );
             }),
             const SizedBox(height: 16),
-            Text('Incoming', style: Theme.of(context).textTheme.titleMedium),
+            Text('Test your keyboard',
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A0E13), // console: darker slate, never pure black
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: _log.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Play a key to see messages…',
-                          style: TextStyle(color: AppColors.textMuted),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _log.length,
-                        itemBuilder: (_, i) => Text(
-                          _log[i],
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: _log[i].startsWith('ON')
-                                ? AppColors.correct
-                                : AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-              ),
-            ),
+            _buildNoteTester(),
+            if (kDebugMode) ...[
+              const SizedBox(height: 16),
+              Text('Raw log (debug)',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Expanded(child: _buildDebugLog()),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  /// Friendly connection check: shows the name of the last key played.
+  Widget _buildNoteTester() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _lastNote != null ? AppColors.correct : AppColors.border,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            _lastNote ?? '—',
+            style: TextStyle(
+              fontSize: 40,
+              fontWeight: FontWeight.w800,
+              color: _lastNote != null
+                  ? AppColors.correct
+                  : AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _lastNote != null
+                ? 'Keyboard working!'
+                : 'Play a key to test the connection',
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDebugLog() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0E13), // console: darker slate, never pure black
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: _log.isEmpty
+          ? const Center(
+              child: Text(
+                'Play a key to see messages…',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            )
+          : ListView.builder(
+              itemCount: _log.length,
+              itemBuilder: (_, i) => Text(
+                _log[i],
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: _log[i].startsWith('ON')
+                      ? AppColors.correct
+                      : AppColors.textSecondary,
+                ),
+              ),
+            ),
     );
   }
 }

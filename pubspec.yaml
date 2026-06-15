@@ -1,5 +1,5 @@
 name: scale_runner
-description: "A new Flutter project."
+description: "Scale Runner — a MIDI piano practice app for drilling scales, chords, and scale-running, with on-screen keys or a real keyboard."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -47,10 +47,43 @@ dependencies:
   # Metronome click playback (SystemSound is silent on iOS/macOS).
   audioplayers: ^6.6.0
 
+# Vendored copy of flutter_midi_command 0.5.4 with the dead `jcenter()`
+# repository removed from android/build.gradle.kts (JCenter was shut down and
+# is unresolved on current Gradle/AGP). Remove this override once upstream ships a fix.
+dependency_overrides:
+  flutter_midi_command:
+    path: third_party/flutter_midi_command
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.7
 
+# Native splash (iOS + Android). macOS is not supported by this package — its
+# splash is handled in-app via a Flutter splash screen. Run after editing:
+#   dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#171E28"
+  image: assets/icon/app_icon.png
+  ios: true
+  android: true
+  web: false
+  android_12:
+    color: "#171E28"
+    image: assets/icon/app_icon.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  remove_alpha_ios: true
+  background_color_ios: "#171E28"   # match your dark theme bg
+  adaptive_icon_background: "#171E28"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon_macos.png"
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -70,7 +103,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/audio/click.wav
+    - assets/audio/
+    - assets/icon/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

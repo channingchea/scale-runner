@@ -2,7 +2,9 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
+import '../audio/note_player.dart';
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
@@ -30,9 +32,12 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _dotsHint = true;
   bool _statsBar = true;
   bool _beatIndicator = true;
+  bool _noteSound = true;
+  final NotePlayer _notes = NotePlayer();
 
-  // Session score carried across controller rebuilds (e.g. when the user
-  // changes which scales/chords are active).
+  // Score carried across controller rebuilds (e.g. when the user changes
+  // which scales/chords are active). Loaded from storage in [_bootstrap] and
+  // persisted on every win, so it survives navigation and app restarts.
   int _carryScore = 0;
   int _carryBestStreak = 0;
 
@@ -52,6 +57,10 @@ class _QuizScreenState extends State<QuizScreen> {
     final dotsHint = await settings.dotsHintEnabled(widget.mode);
     final statsBar = await settings.statsBarEnabled(widget.mode);
     final beatIndicator = await settings.beatIndicatorEnabled(widget.mode);
+    final noteSound = await settings.noteSoundEnabled();
+    // Restore the persisted session stats before building the controller.
+    _carryScore = await settings.quizScore(widget.mode);
+    _carryBestStreak = await settings.quizBestStreak(widget.mode);
     // The metronome outlives controller rebuilds; tempo persists globally.
     _metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
@@ -65,6 +74,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _dotsHint = dotsHint;
         _statsBar = statsBar;
         _beatIndicator = beatIndicator;
+        _noteSound = noteSound;
       });
     }
   }
@@ -82,8 +92,22 @@ class _QuizScreenState extends State<QuizScreen> {
       ..score = _carryScore
       ..bestStreak = _carryBestStreak
       // Covers taps AND MIDI — both route through pressKey.
-      ..onAnyPress = (_) {
+      ..onAnyPress = (note) {
+        if (_noteSound) _notes.play(note);
         if (_beatIndicator) _metronome?.registerHit();
+      }
+      // Fires on every win: celebrate, then persist the stats so they
+      // survive navigation and restarts.
+      ..onStatsChanged = () {
+        // Stronger buzz when a new best streak is set.
+        if (next.bestStreak > _carryBestStreak) {
+          HapticFeedback.heavyImpact();
+        } else {
+          HapticFeedback.mediumImpact();
+        }
+        _carryScore = next.score;
+        _carryBestStreak = next.bestStreak;
+        settings.setQuizStats(widget.mode, next.score, next.bestStreak);
       };
     next.bindMidi(widget.midi);
     if (!mounted) {
@@ -111,13 +135,24 @@ class _QuizScreenState extends State<QuizScreen> {
       onDotsHintChanged: (on) => setState(() => _dotsHint = on),
       onStatsBarChanged: (on) => setState(() => _statsBar = on),
       onBeatIndicatorChanged: (on) => setState(() => _beatIndicator = on),
+      onNoteSoundChanged: (on) => setState(() => _noteSound = on),
+      onResetStats: _resetStats,
     );
+  }
+
+  /// Zero the persisted score/best streak and the running controller's stats.
+  void _resetStats() {
+    _carryScore = 0;
+    _carryBestStreak = 0;
+    _controller?.resetStats();
+    _settings?.setQuizStats(widget.mode, 0, 0);
   }
 
   @override
   void dispose() {
     _controller?.dispose();
     _metronome?.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
@@ -148,8 +183,12 @@ class _QuizScreenState extends State<QuizScreen> {
                     // in short landscape viewports where a fixed keyboard
                     // overflowed the bottom.
                     final bodyHeight = MediaQuery.of(context).size.height;
-                    final keyboardHeight =
-                        (bodyHeight * 0.46).clamp(140.0, 240.0);
+                    // Compact mode: landscape PHONES only. Portrait phones and
+                    // tablets are tall enough for the regular layout.
+                    final compact = _isMobile && bodyHeight < 500;
+                    final keyboardHeight = compact
+                        ? (bodyHeight * 0.40).clamp(120.0, 240.0)
+                        : (bodyHeight * 0.46).clamp(140.0, 240.0);
                     return SafeArea(
                       bottom: false,
                       child: Column(
@@ -157,8 +196,9 @@ class _QuizScreenState extends State<QuizScreen> {
                           // Reserve room for the floating top bar so the score
                           // bar / prompt start below the icons.
                           const SizedBox(height: _topBarHeight),
-                          if (_statsBar) _buildScoreBar(controller),
-                          Expanded(child: _buildPrompt(context, controller)),
+                          if (_statsBar) _buildScoreBar(controller, compact),
+                          Expanded(
+                              child: _buildPrompt(context, controller, compact)),
                           _buildKeyboard(controller, keyboardHeight),
                         ],
                       ),
@@ -209,25 +249,25 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildScoreBar(QuizController c) {
+  Widget _buildScoreBar(QuizController c, bool compact) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
       child: Row(
         children: [
-          _stat('Score', '${c.score}', AppColors.accent),
+          _stat('Score', '${c.score}', AppColors.accent, compact),
           const SizedBox(width: 12),
-          _stat('Streak', '${c.streak}', AppColors.accent2),
+          _stat('Streak', '${c.streak}', AppColors.accent2, compact),
           const SizedBox(width: 12),
-          _stat('Best', '${c.bestStreak}', AppColors.target),
+          _stat('Best', '${c.bestStreak}', AppColors.target, compact),
         ],
       ),
     );
   }
 
-  Widget _stat(String label, String value, Color color) {
+  Widget _stat(String label, String value, Color color, bool compact) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: EdgeInsets.symmetric(vertical: compact ? 5 : 10),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
@@ -240,7 +280,9 @@ class _QuizScreenState extends State<QuizScreen> {
               fit: BoxFit.scaleDown,
               child: Text(value,
                   style: TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+                      fontSize: compact ? 17 : 22,
+                      fontWeight: FontWeight.bold,
+                      color: color)),
             ),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -254,15 +296,17 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildPrompt(BuildContext context, QuizController c) {
+  Widget _buildPrompt(BuildContext context, QuizController c, bool compact) {
     final complete = c.roundComplete;
     // Fill the slot between the top bar and the keyboard and center the prompt
     // within it. LayoutBuilder + minHeight = available height makes the column
     // center when there's room and scroll (not overflow) when the viewport is
-    // too short.
+    // too short. Compact (landscape-phone) mode tightens fonts and gaps so the
+    // whole stack fits without scrolling.
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: EdgeInsets.symmetric(
+            horizontal: 20, vertical: compact ? 4 : 8),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: constraints.maxHeight),
           child: Column(
@@ -271,10 +315,11 @@ class _QuizScreenState extends State<QuizScreen> {
             children: [
             Text(
               _instruction,
-              style:
-                  const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+              style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: compact ? 13 : 14),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: compact ? 6 : 16),
             AnimatedScale(
               scale: complete ? 1.08 : 1.0,
               duration: const Duration(milliseconds: 250),
@@ -292,7 +337,7 @@ class _QuizScreenState extends State<QuizScreen> {
                         c.promptLabel,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: _isMobile ? 36 : 40,
+                          fontSize: compact ? 28 : (_isMobile ? 36 : 40),
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                           height: 1.1,
@@ -307,10 +352,11 @@ class _QuizScreenState extends State<QuizScreen> {
                       child: AnimatedOpacity(
                         opacity: complete ? 1 : 0,
                         duration: const Duration(milliseconds: 150),
-                        child: const Padding(
-                          padding: EdgeInsets.only(left: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 10),
                           child: Icon(Icons.check_circle,
-                              color: AppColors.correct, size: 36),
+                              color: AppColors.correct,
+                              size: compact ? 28 : 36),
                         ),
                       ),
                     ),
@@ -319,7 +365,7 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
             if (_formulaHint) ...[
-              const SizedBox(height: 10),
+              SizedBox(height: compact ? 6 : 10),
               // Each degree lights up teal as its note is played correctly;
               // a wrong note clears the lot (in sync with the keyboard).
               FittedBox(
@@ -329,10 +375,10 @@ class _QuizScreenState extends State<QuizScreen> {
                   children: [
                     for (var i = 0; i < c.formulaDegrees.length; i++) ...[
                       if (i > 0)
-                        const Text(
+                        Text(
                           '-',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: compact ? 15 : 18,
                             fontWeight: FontWeight.w600,
                             color: AppColors.textMuted,
                             letterSpacing: 1.5,
@@ -341,7 +387,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       AnimatedDefaultTextStyle(
                         duration: const Duration(milliseconds: 150),
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: compact ? 15 : 18,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 1.5,
                           color: c.isDegreeSolved(i)
@@ -355,16 +401,16 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 16),
+            SizedBox(height: compact ? 8 : 16),
             AnimatedOpacity(
               opacity: complete ? 1 : 0,
               duration: const Duration(milliseconds: 200),
-              child: const Text(
+              child: Text(
                 'Correct! Press any key to continue',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: AppColors.correct,
-                    fontSize: 16,
+                    fontSize: compact ? 14 : 16,
                     fontWeight: FontWeight.w600),
               ),
             ),
