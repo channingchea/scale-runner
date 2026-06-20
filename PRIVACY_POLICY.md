@@ -31,4 +31,4 @@ If this policy changes, the updated version will be posted here with a revised "
 
 ## Contact
 
-If you have questions about this privacy policy, contact: channingchea@yahoo.com
+If you have questions about this privacy policy, contact: channing@c1gnus.com

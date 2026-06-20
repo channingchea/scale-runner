@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
+import '../purchases/purchase_service.dart';
+import '../purchases/paywall_sheet.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
 import '../widgets/welcome_sheet.dart';
 import 'quiz_screen.dart';
 import 'scale_run_screen.dart';
+import 'inversion_run_screen.dart';
 import 'midi_monitor_screen.dart';
+import 'settings_screen.dart';
 
 /// Landing screen: pick a practice mode, see MIDI status, open the monitor.
 class HomeScreen extends StatefulWidget {
@@ -23,19 +27,22 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _setupSub;
+  final PurchaseService _purchases = PurchaseService.instance;
 
   @override
   void initState() {
     super.initState();
-    // MidiService is started once in main.dart; here we only listen.
-    // Rebuild the status banner when devices connect/disconnect.
     _setupSub = widget.midi.onSetupChanged.listen((_) {
       if (mounted) setState(() {});
     });
+    _purchases.addListener(_onPurchasesChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowIntro());
   }
 
-  /// Show the welcome sheet once, on the very first launch.
+  void _onPurchasesChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _maybeShowIntro() async {
     final settings = await QuizSettings.load();
     if (await settings.introSeen()) return;
@@ -47,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _setupSub?.cancel();
+    _purchases.removeListener(_onPurchasesChanged);
     super.dispose();
   }
 
@@ -58,12 +66,54 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openScaleRun() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScaleRunScreen(midi: widget.midi),
+      ),
+    );
+  }
+
+  Future<void> _openScaleRunGated() async {
+    if (_purchases.isPro) {
+      _openScaleRun();
+      return;
+    }
+    final unlocked = await PaywallSheet.show(context);
+    if (unlocked && mounted) _openScaleRun();
+  }
+
+  void _openInversionRun() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InversionRunScreen(midi: widget.midi),
+      ),
+    );
+  }
+
+  Future<void> _openInversionRunGated() async {
+    if (_purchases.isPro) {
+      _openInversionRun();
+      return;
+    }
+    final unlocked = await PaywallSheet.show(context);
+    if (unlocked && mounted) _openInversionRun();
+  }
+
   void _openMonitor() {
     Navigator.of(context)
         .push(MaterialPageRoute(
           builder: (_) => MidiMonitorScreen(midi: widget.midi),
         ))
         .then((_) => setState(() {}));
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SettingsScreen(),
+      ),
+    );
   }
 
   @override
@@ -87,16 +137,14 @@ class _HomeScreenState extends State<HomeScreen> {
               _ModeCard(
                 title: 'Scales',
                 subtitle: 'Play scales from a random key, note by note',
-                icon: Icons.timeline,
-                gradient: const [AppColors.accent, Color(0xFF1FA396)],
+                imagePath: 'assets/icon/Icon_Scales.jpg',
                 onTap: () => _openQuiz(QuizMode.scale),
               ),
               const SizedBox(height: 14),
               _ModeCard(
                 title: 'Chords',
                 subtitle: 'Build the named chord, holding all the notes at once',
-                icon: Icons.grid_view_rounded,
-                gradient: const [AppColors.accent2, Color(0xFFD98E0B)],
+                imagePath: 'assets/icon/Icon_Chords.jpg',
                 onTap: () => _openQuiz(QuizMode.chord),
               ),
               const SizedBox(height: 14),
@@ -104,13 +152,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Scale Running',
                 subtitle:
                     'Hold chords and run their modes in time, key by key',
-                icon: Icons.directions_run,
-                gradient: const [AppColors.correct, Color(0xFF2E9C5C)],
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ScaleRunScreen(midi: widget.midi),
-                  ),
-                ),
+                imagePath: 'assets/icon/Icon_Running.jpg',
+                locked: !_purchases.isPro,
+                onTap: _openScaleRunGated,
+              ),
+              const SizedBox(height: 14),
+              _ModeCard(
+                title: 'Inversion Running',
+                subtitle:
+                    'Walk a chord up its inversions an octave and back down',
+                imagePath: 'assets/icon/invert-run.jpg',
+                locked: !_purchases.isPro,
+                onTap: _openInversionRunGated,
               ),
             ],
           ),
@@ -151,6 +204,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.info_outline),
+          color: AppColors.textSecondary,
+          tooltip: 'Settings',
+          onPressed: _openSettings,
+        ),
         IconButton(
           icon: const Icon(Icons.help_outline),
           color: AppColors.textSecondary,
@@ -218,16 +277,16 @@ class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.title,
     required this.subtitle,
-    required this.icon,
-    required this.gradient,
+    required this.imagePath,
     required this.onTap,
+    this.locked = false,
   });
 
   final String title;
   final String subtitle;
-  final IconData icon;
-  final List<Color> gradient;
+  final String imagePath;
   final VoidCallback onTap;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -243,18 +302,14 @@ class _ModeCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: gradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.asset(
+                imagePath,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
               ),
-              child: Icon(icon, color: const Color(0xFF0F141B), size: 30),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -273,10 +328,40 @@ class _ModeCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                size: 16, color: AppColors.textMuted),
+            if (locked)
+              const _ProBadge()
+            else
+              const Icon(Icons.arrow_forward_ios,
+                  size: 16, color: AppColors.textMuted),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ProBadge extends StatelessWidget {
+  const _ProBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: AppColors.accentGradient,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock, size: 12, color: Color(0xFF06251F)),
+          SizedBox(width: 4),
+          Text('PRO',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF06251F))),
+        ],
       ),
     );
   }

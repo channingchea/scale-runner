@@ -16,34 +16,64 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   bool _done = false;
+  late final AnimationController _logoController;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _logoOpacity;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1100), () {
+
+    // Logo entrance: fade + scale up over 600ms
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _logoScale = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeOutCubic),
+    );
+    _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeIn),
+    );
+    _logoController.forward();
+
+    Future.delayed(const Duration(milliseconds: 1400), () {
       if (mounted) setState(() => _done = true);
     });
   }
 
   @override
+  void dispose() {
+    _logoController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 600),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: child,
+      ),
       child: _done
           ? widget.child
           : Container(
               key: const ValueKey('splash'),
-              color: AppColors.surface, // #171E28 — same as app icon background
+              color: AppColors.surface,
               alignment: Alignment.center,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Image.asset(
-                  'assets/icon/app_icon.png',
-                  width: 128,
-                  height: 128,
-                  fit: BoxFit.cover,
+              child: FadeTransition(
+                opacity: _logoOpacity,
+                child: ScaleTransition(
+                  scale: _logoScale,
+                  child: Image.asset(
+                    'assets/icon/icon_splash.png',
+                    width: 200,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),

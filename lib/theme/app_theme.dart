@@ -72,7 +72,6 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.bg,
       colorScheme: scheme,
       textTheme: text.copyWith(
-        // Display/title: Space Grotesk for a modern, slightly technical feel.
         displayLarge: GoogleFonts.spaceGrotesk(
           fontSize: 32,
           fontWeight: FontWeight.w600,
@@ -125,6 +124,63 @@ class AppTheme {
       dividerTheme: const DividerThemeData(
         color: AppColors.border,
         thickness: 1,
+      ),
+    );
+  }
+
+  static ThemeData get light {
+    final base = ThemeData.light(useMaterial3: true);
+    const accent = AppColors.accent;
+    final scheme = ColorScheme.fromSeed(
+      seedColor: accent,
+      brightness: Brightness.light,
+    ).copyWith(
+      primary: accent,
+      onPrimary: const Color(0xFF06251F),
+      secondary: AppColors.accent2,
+      onSecondary: const Color(0xFF2A1B00),
+      error: AppColors.wrong,
+    );
+
+    final text = GoogleFonts.interTextTheme(base.textTheme);
+
+    return base.copyWith(
+      colorScheme: scheme,
+      textTheme: text.copyWith(
+        titleLarge: GoogleFonts.spaceGrotesk(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+        ),
+        headlineMedium: GoogleFonts.spaceGrotesk(
+          fontSize: 26,
+          fontWeight: FontWeight.w600,
+        ),
+        displayLarge: GoogleFonts.spaceGrotesk(
+          fontSize: 32,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      appBarTheme: AppBarTheme(
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: GoogleFonts.spaceGrotesk(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: const Color(0xFF06251F),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          textStyle: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

@@ -47,6 +47,12 @@ class QuizSettings {
   static const _runSeventhsKey = 'run_sevenths';
   static const _runStartKeyKey = 'run_start_key';
 
+  // Inversion Running drill.
+  static const _invChordsKey = 'inv_chords';
+  static const _invTempoKey = 'inv_tempo';
+  static const _invShowDotsKey = 'inv_show_dots';
+  static const _invShowFormulaKey = 'inv_show_formula';
+
   static Future<QuizSettings> load() async =>
       QuizSettings._(SharedPreferencesAsync());
 
@@ -202,5 +208,59 @@ class QuizSettings {
     final filtered =
         commonChords.where((c) => names.contains(c.name)).toList();
     return filtered.isEmpty ? commonChords : filtered;
+  }
+
+  // ---- Inversion Running drill settings ----
+
+  /// The four chords offered in v1 (all present in [commonChords]).
+  static const List<String> invChordNames = [
+    'Major', 'Minor', 'Major 7th', 'Minor 7th',
+  ];
+
+  /// Enabled inversion-drill chord names. Defaults to all four v1 chords.
+  Future<Set<String>> invEnabledChordNames() async {
+    final stored = await _prefs.getStringList(_invChordsKey);
+    if (stored == null || stored.isEmpty) return invChordNames.toSet();
+    return stored.toSet();
+  }
+
+  Future<void> setInvEnabledChordNames(Set<String> names) async {
+    await _prefs.setStringList(_invChordsKey, names.toList());
+  }
+
+  /// The enabled inversion-drill [ChordFormula]s (library order). Falls back to
+  /// the full v1 set if the saved selection matches nothing.
+  Future<List<ChordFormula>> invEnabledChords() async {
+    final names = await invEnabledChordNames();
+    final filtered = commonChords
+        .where((c) => invChordNames.contains(c.name) && names.contains(c.name))
+        .toList();
+    if (filtered.isNotEmpty) return filtered;
+    return commonChords.where((c) => invChordNames.contains(c.name)).toList();
+  }
+
+  /// Whether the inversion drill runs in tempo (metronome) mode. Default off
+  /// (self-paced). Tempo mode is wired in a later build.
+  Future<bool> invTempoMode() async =>
+      await _prefs.getBool(_invTempoKey) ?? false;
+
+  Future<void> setInvTempoMode(bool on) async {
+    await _prefs.setBool(_invTempoKey, on);
+  }
+
+  /// Whether the blue target dots hint is shown on the keyboard. Default on.
+  Future<bool> invShowDots() async =>
+      await _prefs.getBool(_invShowDotsKey) ?? true;
+
+  Future<void> setInvShowDots(bool on) async {
+    await _prefs.setBool(_invShowDotsKey, on);
+  }
+
+  /// Whether the chord formula line is shown under the prompt. Default on.
+  Future<bool> invShowFormula() async =>
+      await _prefs.getBool(_invShowFormulaKey) ?? true;
+
+  Future<void> setInvShowFormula(bool on) async {
+    await _prefs.setBool(_invShowFormulaKey, on);
   }
 }

@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
+            VALUE "CompanyName", "Scale Runner" "\0"
             VALUE "FileDescription", "scale_runner" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "scale_runner" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Scale Runner. All rights reserved." "\0"
             VALUE "OriginalFilename", "scale_runner.exe" "\0"
             VALUE "ProductName", "scale_runner" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

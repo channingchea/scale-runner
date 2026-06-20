@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 
 import 'theme/app_theme.dart';
 import 'midi/midi_service.dart';
+import 'purchases/purchase_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  PurchaseService.instance.configure();
   runApp(const ScaleRunnerApp());
 }
 
@@ -17,8 +20,6 @@ class ScaleRunnerApp extends StatefulWidget {
 }
 
 class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
-  // One MIDI service for the whole app, shared across screens so a connection
-  // made on the home/monitor screen stays live in the quiz.
   final MidiService _midi = MidiService();
 
   @override

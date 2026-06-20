@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theory/music_theory.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
 
@@ -88,6 +89,10 @@ class QuizSettingsSheet extends StatefulWidget {
 class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
   late List<String> _all;
   Set<String> _enabled = {};
+
+  /// Scale rows whose formula panel is currently slid open (by scale name).
+  final Set<String> _formulaOpen = {};
+
   bool _formulaHint = true;
   bool _dotsHint = true;
   bool _statsBar = true;
@@ -333,55 +338,168 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     );
   }
 
-  /// Scale names grouped and ordered by scale degree. Names must match those in
-  /// `commonScales`; any not listed here are appended so nothing is dropped.
+  /// Scale names grouped by parent scale and ordered by mode (scale degree).
+  /// Names must match those in `commonScales`; any not listed here fall into the
+  /// trailing "Other Scales" group so nothing is dropped.
   static const List<String> _majorScaleModes = [
     'Major (Ionian)',
     'Dorian',
     'Phrygian',
     'Lydian',
     'Mixolydian',
-    'Natural Minor (Aeolian)',
+    'Aeolian (Natural Minor)',
     'Locrian',
   ];
-  static const List<String> _miscScales = [
+  static const List<String> _harmonicMinorModes = [
     'Harmonic Minor',
+    'Locrian ♮6',
+    'Ionian #5 (Augmented Major)',
+    'Dorian #4 (Ukrainian Dorian)',
+    'Phrygian Dominant',
+    'Lydian #2',
+    'Ultralocrian (Altered Diminished)',
+  ];
+  static const List<String> _melodicMinorModes = [
     'Melodic Minor (asc)',
-    'Major Pentatonic',
-    'Minor Pentatonic',
-    'Blues',
-    'Chromatic',
+    'Dorian b2 (Phrygian ♮6)',
+    'Lydian Augmented',
+    'Lydian Dominant',
+    'Mixolydian b6',
+    'Locrian ♮2 (Half-Diminished)',
+    'Altered (Super Locrian)',
   ];
 
   List<Widget> _groupedScaleTiles() {
-    final known = {..._majorScaleModes, ..._miscScales};
-    final leftover = _all.where((n) => !known.contains(n)).toList();
+    final known = {
+      ..._majorScaleModes,
+      ..._harmonicMinorModes,
+      ..._melodicMinorModes,
+    };
+    final other = _all.where((n) => !known.contains(n)).toList();
     return [
-      _sectionHeader('Major Scale Modes'),
-      ..._flatTiles(_majorScaleModes.where(_all.contains)),
-      _sectionDivider(),
-      _sectionHeader('Misc. Scales'),
-      ..._flatTiles(_miscScales.where(_all.contains)),
-      if (leftover.isNotEmpty) ..._flatTiles(leftover),
+      _scaleGroup('Major Scale', _majorScaleModes),
+      _scaleGroup('Harmonic Minor Scale', _harmonicMinorModes),
+      _scaleGroup('Melodic Minor Scale', _melodicMinorModes),
+      if (other.isNotEmpty) _scaleGroup('Other Scales', other),
     ];
   }
 
+  /// One collapsible accordion group: a parent scale with its modes as toggles.
+  /// The header shows how many of the group's scales are enabled. Collapsed by
+  /// default to keep the list compact and easy to scan.
+  Widget _scaleGroup(String title, List<String> names) {
+    final present = names.where(_all.contains).toList();
+    final on = present.where(_enabled.contains).length;
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 20),
+        iconColor: AppColors.textSecondary,
+        collapsedIconColor: AppColors.textSecondary,
+        title: Text(
+          title,
+          style: const TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '$on of ${present.length} on',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        children: _flatTiles(present),
+      ),
+    );
+  }
+
   List<Widget> _flatTiles(Iterable<String> names) => [
-        for (final name in names)
-          SwitchListTile(
-            value: _enabled.contains(name),
-            onChanged: (v) => _toggle(name, v),
-            title: Text(
-              name,
-              style: const TextStyle(
-                  color: AppColors.textPrimary, fontWeight: FontWeight.w500),
-            ),
-            activeThumbColor: Colors.white,
-            activeTrackColor: AppColors.accent,
-            inactiveThumbColor: AppColors.textMuted,
-            inactiveTrackColor: AppColors.surfaceHigh,
-          ),
+        for (final name in names) _scaleTile(name),
       ];
+
+  /// A scale row: name + a "?" info button + the on/off switch. Tapping "?"
+  /// slides a formula panel open beneath the row (same motion as the
+  /// metronome's expand). Only scales have a known formula; chords show none.
+  Widget _scaleTile(String name) {
+    final formula = _formulaFor(name);
+    final open = _formulaOpen.contains(name);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ListTile(
+          title: Text(
+            name,
+            style: const TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (formula != null)
+                IconButton(
+                  icon: const Icon(Icons.help_outline, size: 20),
+                  color: open ? AppColors.accent : AppColors.textSecondary,
+                  tooltip: 'Show formula',
+                  onPressed: () => setState(() =>
+                      open ? _formulaOpen.remove(name) : _formulaOpen.add(name)),
+                ),
+              Switch(
+                value: _enabled.contains(name),
+                onChanged: (v) => _toggle(name, v),
+                activeThumbColor: Colors.white,
+                activeTrackColor: AppColors.accent,
+                inactiveThumbColor: AppColors.textMuted,
+                inactiveTrackColor: AppColors.surfaceHigh,
+              ),
+            ],
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: (open && formula != null)
+              ? _formulaPanel(formula)
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  Widget _formulaPanel(String formula) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Text('Formula',
+                style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                formula,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: tabularFigures),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  /// Degree formula for a scale name, or null if it isn't a known scale.
+  String? _formulaFor(String name) {
+    for (final s in commonScales) {
+      if (s.name == name) return s.formula;
+    }
+    return null;
+  }
 
   Widget _sectionHeader(String label) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),

@@ -54,10 +54,17 @@ String formulaOf(List<int> intervals) {
 class ScaleFormula {
   final String name;
   final List<int> intervals;
-  const ScaleFormula(this.name, this.intervals);
+
+  /// Optional explicit degree spelling. The generic [formulaOf] heuristic can't
+  /// know the correct enharmonic degree for every mode (e.g. Lydian #2's b3 is
+  /// really a #2, Locrian's bb7 is really a 6). Provide this so each diatonic
+  /// mode spells one of each degree 1–7. Must have one label per interval.
+  final String? formulaOverride;
+
+  const ScaleFormula(this.name, this.intervals, {this.formulaOverride});
 
   /// Degree notation, e.g. "1-2-b3-4-5-b6-b7".
-  String get formula => formulaOf(intervals);
+  String get formula => formulaOverride ?? formulaOf(intervals);
 
   /// Ascending MIDI notes for this scale from [rootMidi], spanning one octave.
   /// When [includeOctave] is true the octave root is appended on top, so the
@@ -111,16 +118,61 @@ class ChordFormula {
 }
 
 /// Library of the most common scales. Intervals are semitones from the root.
+///
+/// Organised by parent scale, each followed by its seven modes in order. Modes
+/// carry an explicit [ScaleFormula.formulaOverride] so every diatonic mode
+/// spells one of each degree 1–7 (the generic [formulaOf] heuristic can't infer
+/// this on its own).
 const List<ScaleFormula> commonScales = [
-  ScaleFormula('Major (Ionian)', [0, 2, 4, 5, 7, 9, 11]),
-  ScaleFormula('Natural Minor (Aeolian)', [0, 2, 3, 5, 7, 8, 10]),
-  ScaleFormula('Harmonic Minor', [0, 2, 3, 5, 7, 8, 11]),
-  ScaleFormula('Melodic Minor (asc)', [0, 2, 3, 5, 7, 9, 11]),
-  ScaleFormula('Dorian', [0, 2, 3, 5, 7, 9, 10]),
-  ScaleFormula('Phrygian', [0, 1, 3, 5, 7, 8, 10]),
-  ScaleFormula('Lydian', [0, 2, 4, 6, 7, 9, 11]),
-  ScaleFormula('Mixolydian', [0, 2, 4, 5, 7, 9, 10]),
-  ScaleFormula('Locrian', [0, 1, 3, 5, 6, 8, 10]),
+  // --- Major scale and its modes (in modal order) ---
+  ScaleFormula('Major (Ionian)', [0, 2, 4, 5, 7, 9, 11],
+      formulaOverride: '1-2-3-4-5-6-7'),
+  ScaleFormula('Dorian', [0, 2, 3, 5, 7, 9, 10],
+      formulaOverride: '1-2-b3-4-5-6-b7'),
+  ScaleFormula('Phrygian', [0, 1, 3, 5, 7, 8, 10],
+      formulaOverride: '1-b2-b3-4-5-b6-b7'),
+  ScaleFormula('Lydian', [0, 2, 4, 6, 7, 9, 11],
+      formulaOverride: '1-2-3-#4-5-6-7'),
+  ScaleFormula('Mixolydian', [0, 2, 4, 5, 7, 9, 10],
+      formulaOverride: '1-2-3-4-5-6-b7'),
+  ScaleFormula('Aeolian (Natural Minor)', [0, 2, 3, 5, 7, 8, 10],
+      formulaOverride: '1-2-b3-4-5-b6-b7'),
+  ScaleFormula('Locrian', [0, 1, 3, 5, 6, 8, 10],
+      formulaOverride: '1-b2-b3-4-b5-b6-b7'),
+
+  // --- Harmonic minor scale and its modes (in modal order) ---
+  ScaleFormula('Harmonic Minor', [0, 2, 3, 5, 7, 8, 11],
+      formulaOverride: '1-2-b3-4-5-b6-7'),
+  ScaleFormula('Locrian ♮6', [0, 1, 3, 5, 6, 9, 10],
+      formulaOverride: '1-b2-b3-4-b5-6-b7'),
+  ScaleFormula('Ionian #5 (Augmented Major)', [0, 2, 4, 5, 8, 9, 11],
+      formulaOverride: '1-2-3-4-#5-6-7'),
+  ScaleFormula('Dorian #4 (Ukrainian Dorian)', [0, 2, 3, 6, 7, 9, 10],
+      formulaOverride: '1-2-b3-#4-5-6-b7'),
+  ScaleFormula('Phrygian Dominant', [0, 1, 4, 5, 7, 8, 10],
+      formulaOverride: '1-b2-3-4-5-b6-b7'),
+  ScaleFormula('Lydian #2', [0, 3, 4, 6, 7, 9, 11],
+      formulaOverride: '1-#2-3-#4-5-6-7'),
+  ScaleFormula('Ultralocrian (Altered Diminished)', [0, 1, 3, 4, 6, 8, 9],
+      formulaOverride: '1-b2-b3-b4-b5-b6-bb7'),
+
+  // --- Melodic minor scale (ascending) and its modes (in modal order) ---
+  ScaleFormula('Melodic Minor (asc)', [0, 2, 3, 5, 7, 9, 11],
+      formulaOverride: '1-2-b3-4-5-6-7'),
+  ScaleFormula('Dorian b2 (Phrygian ♮6)', [0, 1, 3, 5, 7, 9, 10],
+      formulaOverride: '1-b2-b3-4-5-6-b7'),
+  ScaleFormula('Lydian Augmented', [0, 2, 4, 6, 8, 9, 11],
+      formulaOverride: '1-2-3-#4-#5-6-7'),
+  ScaleFormula('Lydian Dominant', [0, 2, 4, 6, 7, 9, 10],
+      formulaOverride: '1-2-3-#4-5-6-b7'),
+  ScaleFormula('Mixolydian b6', [0, 2, 4, 5, 7, 8, 10],
+      formulaOverride: '1-2-3-4-5-b6-b7'),
+  ScaleFormula('Locrian ♮2 (Half-Diminished)', [0, 2, 3, 5, 6, 8, 10],
+      formulaOverride: '1-2-b3-4-b5-b6-b7'),
+  ScaleFormula('Altered (Super Locrian)', [0, 1, 3, 4, 6, 8, 10],
+      formulaOverride: '1-b2-b3-b4-b5-b6-b7'),
+
+  // --- Other common scales ---
   ScaleFormula('Major Pentatonic', [0, 2, 4, 7, 9]),
   ScaleFormula('Minor Pentatonic', [0, 3, 5, 7, 10]),
   ScaleFormula('Blues', [0, 3, 5, 6, 7, 10]),
