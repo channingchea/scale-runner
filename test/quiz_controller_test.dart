@@ -88,6 +88,22 @@ void main() {
       expect(c.feedbackFor(extra), KeyFeedback.wrong);
       expect(c.roundComplete, isFalse);
     });
+
+    test('disposing while a wrong-flash timer is pending does not throw', () async {
+      final cMaj = const ChordFormula('Major', [0, 4, 7]);
+      final c = QuizController(mode: QuizMode.chord, chords: [cMaj], seed: 4);
+      final notes = c.targetNotes;
+
+      c.pressKey(notes[0]);
+      final extra = notes[0] + 1; // triggers _flashWrong's 450ms timer
+      c.pressKey(extra);
+      expect(c.feedbackFor(extra), KeyFeedback.wrong);
+
+      c.dispose();
+      // If the timer weren't cancelled, it would fire here and call
+      // notifyListeners() on a disposed ChangeNotifier, throwing.
+      await Future.delayed(const Duration(milliseconds: 500));
+    });
   });
 
   test('resetStats zeros score, streak, and best streak', () {
@@ -102,5 +118,34 @@ void main() {
     expect(c.score, 0);
     expect(c.streak, 0);
     expect(c.bestStreak, 0);
+  });
+
+  group('QuizController - enabled root keys', () {
+    test('only draws roots from the enabled set across many rounds', () {
+      final major = const ScaleFormula('Major', [0, 2, 4, 5, 7, 9, 11]);
+      const allowed = {0, 4, 7}; // C, E, G
+      for (var seed = 0; seed < 30; seed++) {
+        final c = QuizController(
+          mode: QuizMode.scale,
+          scales: [major],
+          enabledRootPcs: allowed,
+          seed: seed,
+        );
+        final rootPc = pitchClassOf(c.targetNotes.first);
+        expect(allowed.contains(rootPc), isTrue,
+            reason: 'seed $seed produced root pc $rootPc');
+      }
+    });
+
+    test('an empty enabled set falls back to all twelve keys', () {
+      final major = const ScaleFormula('Major', [0, 2, 4, 5, 7, 9, 11]);
+      final c = QuizController(
+        mode: QuizMode.scale,
+        scales: [major],
+        enabledRootPcs: const {},
+        seed: 7,
+      );
+      expect(c.targetNotes, isNotEmpty);
+    });
   });
 }

@@ -3,15 +3,20 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../audio/note_player.dart';
 import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
+import '../streak/streak_service.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/quiz_settings_sheet.dart';
+import '../widgets/reminder_prompt_sheet.dart';
+import '../widgets/rotate_hint_banner.dart';
+import '../widgets/streak_sheets.dart';
 
 /// The practice loop: a random prompt, the keyboard, and live feedback.
 class QuizScreen extends StatefulWidget {
@@ -42,12 +47,12 @@ class _QuizScreenState extends State<QuizScreen> {
   int _carryBestStreak = 0;
 
   /// True on phones/tablets (used for sizing tweaks).
-  bool get _isMobile =>
-      !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     _bootstrap();
   }
 
@@ -62,10 +67,16 @@ class _QuizScreenState extends State<QuizScreen> {
     _carryScore = await settings.quizScore(widget.mode);
     _carryBestStreak = await settings.quizBestStreak(widget.mode);
     // The metronome outlives controller rebuilds; tempo persists globally.
-    _metronome = MetronomeController(
-      bpm: await settings.metronomeBpm(),
-      onBpmChanged: settings.setMetronomeBpm,
-    );
+    final difficulty = await settings.timingDifficulty();
+    final hapticEnabled = await settings.tickHapticEnabled();
+    _metronome =
+        MetronomeController(
+            bpm: await settings.metronomeBpm(),
+            onBpmChanged: settings.setMetronomeBpm,
+          )
+          ..onBeatMs = difficulty.onBeatMs
+          ..closeMs = difficulty.closeMs
+          ..hapticEnabled = hapticEnabled;
     await _rebuildController(settings);
     if (mounted) {
       setState(() {
@@ -82,11 +93,20 @@ class _QuizScreenState extends State<QuizScreen> {
   /// (Re)build the controller from the currently-enabled formulas.
   Future<void> _rebuildController(QuizSettings settings) async {
     final old = _controller;
+    final enabledRootPcs = await settings.enabledRootPcs(widget.mode);
     final QuizController next;
     if (widget.mode == QuizMode.scale) {
-      next = QuizController(mode: widget.mode, scales: await settings.enabledScales());
+      next = QuizController(
+        mode: widget.mode,
+        scales: await settings.enabledScales(),
+        enabledRootPcs: enabledRootPcs,
+      );
     } else {
-      next = QuizController(mode: widget.mode, chords: await settings.enabledChords());
+      next = QuizController(
+        mode: widget.mode,
+        chords: await settings.enabledChords(),
+        enabledRootPcs: enabledRootPcs,
+      );
     }
     next
       ..score = _carryScore
@@ -108,6 +128,15 @@ class _QuizScreenState extends State<QuizScreen> {
         _carryScore = next.score;
         _carryBestStreak = next.bestStreak;
         settings.setQuizStats(widget.mode, next.score, next.bestStreak);
+        // Quiz has no discrete session end; the first win of the day keeps
+        // the daily practice streak alive (recordPractice is a no-op after).
+        StreakService.instance.recordPractice().then((update) async {
+          if (!mounted) return;
+          if (update.milestone case final m?) {
+            await StreakMilestoneSheet.show(context, m);
+          }
+          if (mounted) await ReminderPromptSheet.maybeShow(context);
+        });
       };
     next.bindMidi(widget.midi);
     if (!mounted) {
@@ -131,11 +160,15 @@ class _QuizScreenState extends State<QuizScreen> {
         _carryBestStreak = _controller?.bestStreak ?? 0;
         _rebuildController(settings);
       },
+      onKeysChanged: (_) {
+        _carryScore = _controller?.score ?? 0;
+        _carryBestStreak = _controller?.bestStreak ?? 0;
+        _rebuildController(settings);
+      },
       onFormulaHintChanged: (on) => setState(() => _formulaHint = on),
       onDotsHintChanged: (on) => setState(() => _dotsHint = on),
       onStatsBarChanged: (on) => setState(() => _statsBar = on),
       onBeatIndicatorChanged: (on) => setState(() => _beatIndicator = on),
-      onNoteSoundChanged: (on) => setState(() => _noteSound = on),
       onResetStats: _resetStats,
     );
   }
@@ -150,14 +183,14 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _controller?.dispose();
     _metronome?.dispose();
     _notes.dispose();
     super.dispose();
   }
 
-  String get _modeLabel =>
-      widget.mode == QuizMode.scale ? 'Scales' : 'Chords';
+  String get _modeLabel => widget.mode == QuizMode.scale ? 'Scales' : 'Chords';
 
   String get _instruction => widget.mode == QuizMode.scale
       ? 'Play the scale, low to high'
@@ -196,9 +229,12 @@ class _QuizScreenState extends State<QuizScreen> {
                           // Reserve room for the floating top bar so the score
                           // bar / prompt start below the icons.
                           const SizedBox(height: _topBarHeight),
+                          if (_settings != null)
+                            RotateHintBanner(settings: _settings!),
                           if (_statsBar) _buildScoreBar(controller, compact),
                           Expanded(
-                              child: _buildPrompt(context, controller, compact)),
+                            child: _buildPrompt(context, controller, compact),
+                          ),
                           _buildKeyboard(controller, keyboardHeight),
                         ],
                       ),
@@ -278,17 +314,24 @@ class _QuizScreenState extends State<QuizScreen> {
             // Shrink to fit narrow cards (portrait phones) instead of clipping.
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(value,
-                  style: TextStyle(
-                      fontSize: compact ? 17 : 22,
-                      fontWeight: FontWeight.bold,
-                      color: color)),
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: compact ? 17 : 22,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
             ),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textSecondary)),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             ),
           ],
         ),
@@ -306,114 +349,120 @@ class _QuizScreenState extends State<QuizScreen> {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         padding: EdgeInsets.symmetric(
-            horizontal: 20, vertical: compact ? 4 : 8),
+          horizontal: 20,
+          vertical: compact ? 4 : 8,
+        ),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: constraints.maxHeight),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-            Text(
-              _instruction,
-              style: TextStyle(
+              Text(
+                _instruction,
+                style: TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: compact ? 13 : 14),
-            ),
-            SizedBox(height: compact ? 6 : 16),
-            AnimatedScale(
-              scale: complete ? 1.08 : 1.0,
-              duration: const Duration(milliseconds: 250),
-              // Scale the name (+ check) down to fit narrow screens instead of
-              // overflowing the right edge.
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ShaderMask(
-                      shaderCallback: (bounds) =>
-                          AppColors.accentGradient.createShader(bounds),
-                      child: Text(
-                        c.promptLabel,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: compact ? 28 : (_isMobile ? 36 : 40),
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.1,
-                        ),
-                      ),
-                    ),
-                    // Green check pops in beside the name on a correct answer.
-                    AnimatedScale(
-                      scale: complete ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.elasticOut,
-                      child: AnimatedOpacity(
-                        opacity: complete ? 1 : 0,
-                        duration: const Duration(milliseconds: 150),
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 10),
-                          child: Icon(Icons.check_circle,
-                              color: AppColors.correct,
-                              size: compact ? 28 : 36),
-                        ),
-                      ),
-                    ),
-                  ],
+                  fontSize: compact ? 13 : 14,
                 ),
               ),
-            ),
-            if (_formulaHint) ...[
-              SizedBox(height: compact ? 6 : 10),
-              // Each degree lights up teal as its note is played correctly;
-              // a wrong note clears the lot (in sync with the keyboard).
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < c.formulaDegrees.length; i++) ...[
-                      if (i > 0)
-                        Text(
-                          '-',
+              SizedBox(height: compact ? 6 : 16),
+              AnimatedScale(
+                scale: complete ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 250),
+                // Scale the name (+ check) down to fit narrow screens instead of
+                // overflowing the right edge.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ShaderMask(
+                        shaderCallback: (bounds) =>
+                            AppColors.accentGradient.createShader(bounds),
+                        child: Text(
+                          c.promptLabel,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: compact ? 28 : (_isMobile ? 36 : 40),
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                      // Green check pops in beside the name on a correct answer.
+                      AnimatedScale(
+                        scale: complete ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.elasticOut,
+                        child: AnimatedOpacity(
+                          opacity: complete ? 1 : 0,
+                          duration: const Duration(milliseconds: 150),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Icon(
+                              Icons.check_circle,
+                              color: AppColors.correct,
+                              size: compact ? 28 : 36,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_formulaHint) ...[
+                SizedBox(height: compact ? 6 : 10),
+                // Each degree lights up teal as its note is played correctly;
+                // a wrong note clears the lot (in sync with the keyboard).
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < c.formulaDegrees.length; i++) ...[
+                        if (i > 0)
+                          Text(
+                            '-',
+                            style: TextStyle(
+                              fontSize: compact ? 15 : 18,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textMuted,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 150),
                           style: TextStyle(
                             fontSize: compact ? 15 : 18,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textMuted,
                             letterSpacing: 1.5,
+                            color: c.isDegreeSolved(i)
+                                ? AppColors.accent
+                                : AppColors.textSecondary,
                           ),
+                          child: Text(c.formulaDegrees[i]),
                         ),
-                      AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 150),
-                        style: TextStyle(
-                          fontSize: compact ? 15 : 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.5,
-                          color: c.isDegreeSolved(i)
-                              ? AppColors.accent
-                              : AppColors.textSecondary,
-                        ),
-                        child: Text(c.formulaDegrees[i]),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-            SizedBox(height: compact ? 8 : 16),
-            AnimatedOpacity(
-              opacity: complete ? 1 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: Text(
-                'Correct! Press any key to continue',
-                textAlign: TextAlign.center,
-                style: TextStyle(
+              ],
+              SizedBox(height: compact ? 8 : 16),
+              AnimatedOpacity(
+                opacity: complete ? 1 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Text(
+                  'Correct! Press any key to continue',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
                     color: AppColors.correct,
                     fontSize: compact ? 14 : 16,
-                    fontWeight: FontWeight.w600),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
             ],
           ),
         ),
@@ -428,13 +477,15 @@ class _QuizScreenState extends State<QuizScreen> {
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         child: SizedBox(
           height: height,
-          child: PianoKeyboard(
-            lowMidi: QuizController.keyboardLowMidi,
-            octaves: QuizController.keyboardOctaves,
-            feedbackFor: c.feedbackFor,
-            isTargetHint: _dotsHint ? c.isTargetHint : (_) => false,
-            onKeyDown: c.pressKey,
-            onKeyUp: c.releaseKey,
+          child: RepaintBoundary(
+            child: PianoKeyboard(
+              lowMidi: QuizController.keyboardLowMidi,
+              octaves: QuizController.keyboardOctaves.toDouble(),
+              feedbackFor: c.feedbackFor,
+              isTargetHint: _dotsHint ? c.isTargetHint : (_) => false,
+              onKeyDown: c.pressKey,
+              onKeyUp: c.releaseKey,
+            ),
           ),
         ),
       ),

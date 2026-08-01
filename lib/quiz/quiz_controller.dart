@@ -40,9 +40,13 @@ class QuizController extends ChangeNotifier {
     required this.mode,
     List<ScaleFormula>? scales,
     List<ChordFormula>? chords,
+    Set<int>? enabledRootPcs,
     int? seed,
   })  : _scales = scales ?? commonScales,
         _chords = chords ?? commonChords,
+        _enabledRootPcs = (enabledRootPcs == null || enabledRootPcs.isEmpty)
+            ? const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            : enabledRootPcs.toList(),
         _rng = Random(seed) {
     _nextRound();
   }
@@ -50,6 +54,7 @@ class QuizController extends ChangeNotifier {
   final QuizMode mode;
   final List<ScaleFormula> _scales;
   final List<ChordFormula> _chords;
+  final List<int> _enabledRootPcs;
   final Random _rng;
 
   // ---- Keyboard range ----------------------------------------------------
@@ -77,6 +82,7 @@ class QuizController extends ChangeNotifier {
 
   /// Keys flashing wrong, cleared after a short delay.
   final Set<int> _wrongFlash = {};
+  Timer? _wrongFlashTimer;
 
   bool _roundComplete = false;
   bool get roundComplete => _roundComplete;
@@ -228,8 +234,9 @@ class QuizController extends ChangeNotifier {
 
   void _flashWrong(int midiNote) {
     _wrongFlash.add(midiNote);
-    Timer(const Duration(milliseconds: 450), () {
-      _wrongFlash.remove(midiNote);
+    _wrongFlashTimer?.cancel();
+    _wrongFlashTimer = Timer(const Duration(milliseconds: 450), () {
+      _wrongFlash.clear();
       notifyListeners();
     });
   }
@@ -267,8 +274,9 @@ class QuizController extends ChangeNotifier {
     _held.clear();
     _wrongFlash.clear();
 
-    // Pick a random root within the lower octave of the keyboard.
-    _rootMidi = keyboardLowMidi + _rng.nextInt(12);
+    // Pick a random enabled root within the lower octave of the keyboard.
+    _rootMidi = keyboardLowMidi +
+        _enabledRootPcs[_rng.nextInt(_enabledRootPcs.length)];
 
     if (mode == QuizMode.scale) {
       final scale = _scales[_rng.nextInt(_scales.length)];
@@ -293,6 +301,7 @@ class QuizController extends ChangeNotifier {
   @override
   void dispose() {
     _midiSub?.cancel();
+    _wrongFlashTimer?.cancel();
     super.dispose();
   }
 }

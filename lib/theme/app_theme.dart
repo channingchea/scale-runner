@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Central design system for Scale Runner — see BRAND_GUIDE.md.
 ///
@@ -63,7 +62,8 @@ class AppTheme {
       onSurfaceVariant: AppColors.textSecondary,
     );
 
-    final text = GoogleFonts.interTextTheme(base.textTheme).apply(
+    final text = base.textTheme.apply(
+      fontFamily: 'Inter',
       bodyColor: AppColors.textPrimary,
       displayColor: AppColors.textPrimary,
     );
@@ -72,28 +72,32 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.bg,
       colorScheme: scheme,
       textTheme: text.copyWith(
-        displayLarge: GoogleFonts.spaceGrotesk(
+        displayLarge: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 32,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        headlineMedium: GoogleFonts.spaceGrotesk(
+        headlineMedium: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 26,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        titleLarge: GoogleFonts.spaceGrotesk(
+        titleLarge: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
       ),
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.bg,
         elevation: 0,
         centerTitle: false,
         foregroundColor: AppColors.textPrimary,
-        titleTextStyle: GoogleFonts.spaceGrotesk(
+        titleTextStyle: TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
@@ -115,7 +119,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: const TextStyle(
+            fontFamily: 'Inter',
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -142,28 +147,32 @@ class AppTheme {
       error: AppColors.wrong,
     );
 
-    final text = GoogleFonts.interTextTheme(base.textTheme);
+    final text = base.textTheme.apply(fontFamily: 'Inter');
 
     return base.copyWith(
       colorScheme: scheme,
       textTheme: text.copyWith(
-        titleLarge: GoogleFonts.spaceGrotesk(
+        titleLarge: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 22,
           fontWeight: FontWeight.w600,
         ),
-        headlineMedium: GoogleFonts.spaceGrotesk(
+        headlineMedium: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 26,
           fontWeight: FontWeight.w600,
         ),
-        displayLarge: GoogleFonts.spaceGrotesk(
+        displayLarge: const TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 32,
           fontWeight: FontWeight.w600,
         ),
       ),
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.spaceGrotesk(
+        titleTextStyle: TextStyle(
+          fontFamily: 'SpaceGrotesk',
           fontSize: 20,
           fontWeight: FontWeight.w600,
         ),
@@ -176,7 +185,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: const TextStyle(
+            fontFamily: 'Inter',
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),

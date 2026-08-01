@@ -1,16 +1,277 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
+import '../notifications/notification_service.dart';
+import '../purchases/purchase_service.dart';
+import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
+import '../widgets/timing_difficulty_selector.dart';
 
-/// About screen — displays the app's privacy policy inline.
-class SettingsScreen extends StatelessWidget {
+/// The app's real settings screen: global sound + timing controls, Restore
+/// Purchases, and a Privacy Policy sub-page.
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  QuizSettings? _settings;
+  bool _noteSound = true;
+  bool _tickHaptic = true;
+  TimingDifficulty _difficulty = TimingDifficulty.normal;
+  String _version = '';
+  bool _restoring = false;
+  bool _reminders = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 18, minute: 0);
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+  Future<void> _init() async {
+    final settings = await QuizSettings.load();
+    final noteSound = await settings.noteSoundEnabled();
+    final tickHaptic = await settings.tickHapticEnabled();
+    final difficulty = await settings.timingDifficulty();
+    final reminders = await settings.remindersEnabled();
+    final (hour, minute) = await settings.reminderTime();
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() {
+      _settings = settings;
+      _noteSound = noteSound;
+      _tickHaptic = tickHaptic;
+      _difficulty = difficulty;
+      _reminders = reminders;
+      _reminderTime = TimeOfDay(hour: hour, minute: minute);
+      _version = '${info.version} (${info.buildNumber})';
+    });
+  }
+
+  Future<void> _toggleReminders(bool on) async {
+    if (on) {
+      // Turning on needs OS permission; if denied, stay off with a hint.
+      final granted = await NotificationService.instance.requestPermission();
+      if (!granted) {
+        _snack('Notifications are blocked — allow them for Scale Runner in '
+            'your device settings first.');
+        return;
+      }
+    }
+    setState(() => _reminders = on);
+    await _settings?.setRemindersEnabled(on);
+    // resync() schedules everything when on and cancels all when off.
+    await NotificationService.instance.resync();
+  }
+
+  Future<void> _pickReminderTime() async {
+    final picked =
+        await showTimePicker(context: context, initialTime: _reminderTime);
+    if (picked == null) return;
+    setState(() => _reminderTime = picked);
+    await _settings?.setReminderTime(picked.hour, picked.minute);
+    await NotificationService.instance.resync();
+  }
+
+  Future<void> _toggleNoteSound(bool on) async {
+    setState(() => _noteSound = on);
+    await _settings?.setNoteSoundEnabled(on);
+  }
+
+  Future<void> _toggleTickHaptic(bool on) async {
+    setState(() => _tickHaptic = on);
+    await _settings?.setTickHapticEnabled(on);
+  }
+
+  Future<void> _restore() async {
+    setState(() => _restoring = true);
+    try {
+      final ok = await PurchaseService.instance.restore();
+      if (!mounted) return;
+      _snack(ok ? 'Pro restored!' : 'No previous purchase found to restore.');
+    } catch (_) {
+      if (!mounted) return;
+      _snack('Couldn\'t restore purchases.');
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _openPrivacyPolicy() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const _PrivacyPolicyScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = _settings;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: settings == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                _sectionHeader('Sound'),
+                _switchTile(
+                  value: _noteSound,
+                  onChanged: _toggleNoteSound,
+                  title: 'Note sound',
+                  subtitle: 'Play a piano tone when you press a key '
+                      '(turn off if your keyboard has its own sound)',
+                ),
+                _switchTile(
+                  value: _tickHaptic,
+                  onChanged: _toggleTickHaptic,
+                  title: 'Haptic tick',
+                  subtitle: 'Buzz the device on every metronome beat',
+                ),
+                _sectionDivider(),
+                _sectionHeader('Reminders'),
+                _switchTile(
+                  value: _reminders,
+                  onChanged: _toggleReminders,
+                  title: 'Practice reminders',
+                  subtitle: 'A daily nudge at your chosen time, plus a '
+                      'heads-up when your streak is about to break',
+                ),
+                if (_reminders) _reminderTimeTile(),
+                _sectionDivider(),
+                _sectionHeader('Timing'),
+                TimingDifficultySelector(
+                  value: _difficulty,
+                  settings: settings,
+                  onChanged: (d) => setState(() => _difficulty = d),
+                ),
+                _sectionDivider(),
+                _sectionHeader('Purchases'),
+                _restoreTile(),
+                _sectionDivider(),
+                _sectionHeader('About'),
+                _privacyTile(),
+                _versionTile(),
+              ],
+            ),
+    );
+  }
+
+  Widget _reminderTimeTile() {
+    return ListTile(
+      leading: const Icon(Icons.schedule, color: AppColors.textSecondary),
+      title: const Text('Reminder time',
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      trailing: Text(_reminderTime.format(context),
+          style: const TextStyle(
+              color: AppColors.accent,
+              fontSize: 15,
+              fontWeight: FontWeight.w700)),
+      onTap: _pickReminderTime,
+    );
+  }
+
+  Widget _restoreTile() {
+    return ListTile(
+      leading: const Icon(Icons.restore, color: AppColors.textSecondary),
+      title: const Text('Restore purchases',
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      subtitle: const Text('Recover a previous Pro unlock on this device',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      trailing: _restoring
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : null,
+      onTap: _restoring ? null : _restore,
+    );
+  }
+
+  Widget _privacyTile() {
+    return ListTile(
+      leading: const Icon(Icons.privacy_tip_outlined,
+          color: AppColors.textSecondary),
+      title: const Text('Privacy Policy',
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      trailing:
+          const Icon(Icons.chevron_right, color: AppColors.textMuted),
+      onTap: _openPrivacyPolicy,
+    );
+  }
+
+  Widget _versionTile() {
+    return ListTile(
+      title: const Text('Version',
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      trailing:
+          Text(_version, style: const TextStyle(color: AppColors.textSecondary)),
+    );
+  }
+
+  Widget _sectionHeader(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+        child: Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
+
+  Widget _sectionDivider() => const Divider(
+        height: 16,
+        thickness: 1,
+        indent: 20,
+        endIndent: 20,
+        color: AppColors.border,
+      );
+
+  Widget _switchTile({
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required String title,
+    required String subtitle,
+  }) {
+    return SwitchListTile(
+      value: value,
+      onChanged: onChanged,
+      title: Text(title,
+          style: const TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      subtitle: Text(subtitle,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      activeThumbColor: Colors.white,
+      activeTrackColor: AppColors.accent,
+      inactiveThumbColor: AppColors.textMuted,
+      inactiveTrackColor: AppColors.surfaceHigh,
+    );
+  }
+}
+
+/// Displays the app's privacy policy inline (no external link — see
+/// scale-runner-settings-info-screen memory for why).
+class _PrivacyPolicyScreen extends StatelessWidget {
+  const _PrivacyPolicyScreen();
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('About')),
+      appBar: AppBar(title: const Text('Privacy Policy')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
         child: Column(
@@ -20,14 +281,14 @@ class SettingsScreen extends StatelessWidget {
                 style: textTheme.titleLarge
                     ?.copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('Last updated: June 14, 2026',
+            Text('Last updated: July 14, 2026',
                 style: textTheme.bodySmall
                     ?.copyWith(color: AppColors.textSecondary)),
             const SizedBox(height: 20),
             _body(context,
-                'Scale Runner does not collect, store, transmit, or share any '
-                'personal data. The app has no user accounts, does not connect '
-                'to the internet, and uses no analytics, advertising, or '
+                'Scale Runner works fully offline and collects no personal '
+                'data unless you choose to sign in for the optional social '
+                'features. The app uses no analytics, advertising, or '
                 'tracking services of any kind.'),
             _section(context, 'Data Stored on Your Device'),
             _body(context,
@@ -35,9 +296,20 @@ class SettingsScreen extends StatelessWidget {
                 'device only, using standard app preferences storage:\n\n'
                 '  • Practice statistics (score, best streak)\n'
                 '  • App settings (sound preference, onboarding status)\n\n'
-                'This information never leaves your device and is not '
-                'accessible to the developer or any third party. It is deleted '
-                'automatically when you uninstall the app.'),
+                'This information is deleted automatically when you uninstall '
+                'the app.'),
+            _section(context, 'Optional Account & Social Features'),
+            _body(context,
+                'If you sign in (with Apple or Google) to use the friends '
+                'features, the following is stored on our servers (Supabase):\n\n'
+                '  • Your display name and a generated avatar\n'
+                '  • Your practice streak (current, best, total days)\n'
+                '  • Your friend connections, invites, and applause\n\n'
+                'This data is visible only to friends you connect with — '
+                'there is no public profile or global leaderboard. You can '
+                'delete your account at any time from the Friends screen, '
+                'which permanently removes all of it from our servers. '
+                'Without an account, nothing ever leaves your device.'),
             _section(context, 'MIDI and Bluetooth'),
             _body(context,
                 'If you connect a MIDI keyboard via USB or Bluetooth, the app '

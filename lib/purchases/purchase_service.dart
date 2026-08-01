@@ -19,18 +19,22 @@ class PurchaseService extends ChangeNotifier {
   static final PurchaseService instance = PurchaseService._();
 
   /// DEV ONLY: when true, the paywall is bypassed and all Pro content is
-  /// unlocked regardless of purchase state. Set back to false to re-enable the
-  /// paywall before shipping. See PAYWALL_SETUP.md / scale-runner-paywall.
-  static const bool _devUnlockAll = true;
+  /// unlocked regardless of purchase state. Tied to `kDebugMode` so it's
+  /// impossible to ship accidentally — a release/TestFlight build always
+  /// shows the real paywall. See PAYWALL_SETUP.md / scale-runner-paywall.
+  static const bool _devUnlockAll = kDebugMode;
 
   /// Entitlement identifier configured in the RevenueCat dashboard.
   /// Anything attached to this entitlement unlocks Pro content.
   static const String proEntitlementId = 'pro';
 
+  /// Store product identifier for the one-time Pro unlock (same on both stores).
+  static const String proProductId = 'com.scalerunner.app.pro';
+
   /// Public SDK keys from RevenueCat → Project → API keys. These are *public*
   /// app keys (safe to ship), not the secret key. Fill both in before launch.
-  static const String _appleApiKey = 'appl_REPLACE_ME';
-  static const String _googleApiKey = 'goog_REPLACE_ME';
+  static const String _appleApiKey = 'appl_yHnLqmLicbSzczBifwpbGRudoYv';
+  static const String _googleApiKey = 'goog_VjsdoHQIGMHysvQphSriLZeecoV';
 
   bool _configured = false;
   bool _isPro = false;
@@ -70,13 +74,17 @@ class PurchaseService extends ChangeNotifier {
     }
   }
 
-  /// The current "default" offering's packages to display on the paywall.
+  /// The current "default" offering's packages, with the Pro unlock first.
+  /// The offering also carries legacy monthly/annual packages, so callers that
+  /// take `.first` must not depend on RevenueCat's ordering.
   /// Returns an empty list if offerings can't be fetched.
   Future<List<Package>> proPackages() async {
     if (!_configured) return const [];
     try {
       final offerings = await Purchases.getOfferings();
-      return offerings.current?.availablePackages ?? const [];
+      final all = offerings.current?.availablePackages ?? const <Package>[];
+      bool isPro(Package p) => p.storeProduct.identifier == proProductId;
+      return [...all.where(isPro), ...all.where((p) => !isPro(p))];
     } catch (e) {
       debugPrint('PurchaseService.proPackages failed: $e');
       return const [];

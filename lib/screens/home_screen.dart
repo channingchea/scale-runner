@@ -6,14 +6,21 @@ import '../theme/app_theme.dart';
 import '../midi/midi_service.dart';
 import '../purchases/purchase_service.dart';
 import '../purchases/paywall_sheet.dart';
+import '../notifications/notification_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
+import '../social/social_service.dart';
+import '../streak/streak_service.dart';
+import '../widgets/streak_sheets.dart';
 import '../widgets/welcome_sheet.dart';
 import 'quiz_screen.dart';
+import 'social_screen.dart';
 import 'scale_run_screen.dart';
 import 'inversion_run_screen.dart';
+import 'jam_mode_screen.dart';
 import 'midi_monitor_screen.dart';
 import 'settings_screen.dart';
+import 'stats_screen.dart';
 
 /// Landing screen: pick a practice mode, see MIDI status, open the monitor.
 class HomeScreen extends StatefulWidget {
@@ -25,18 +32,40 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<String>? _setupSub;
   final PurchaseService _purchases = PurchaseService.instance;
+  final StreakService _streak = StreakService.instance;
+  final SocialService _social = SocialService.instance;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupSub = widget.midi.onSetupChanged.listen((_) {
       if (mounted) setState(() {});
     });
     _purchases.addListener(_onPurchasesChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowIntro());
+    _streak.addListener(_onPurchasesChanged);
+    _social.addListener(_onPurchasesChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _maybeShowIntro();
+      await _maybeShowStreakEvent();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A long-suspended app crosses midnights too: re-evaluate the streak on
+    // resume so freezes/breaks surface without a full relaunch.
+    if (state == AppLifecycleState.resumed) {
+      _streak.init().then((_) async {
+        await _maybeShowStreakEvent();
+        await NotificationService.instance.resync();
+      });
+      // Pull fresh friend streaks/applause when coming back to the app.
+      if (_social.isSignedIn) _social.refresh();
+    }
   }
 
   void _onPurchasesChanged() {
@@ -51,11 +80,34 @@ class _HomeScreenState extends State<HomeScreen> {
     WelcomeSheet.show(context);
   }
 
+  /// Surfaces the pending app-open streak event (Pro freeze applied, or
+  /// streak lost → paywall recovery moment) at most once per event.
+  Future<void> _maybeShowStreakEvent() async {
+    if (!mounted) return;
+    switch (_streak.consumeOpenEvent()) {
+      case StreakFrozen(:final streak):
+        await StreakFrozenSheet.show(context, streak);
+      case StreakLost(:final lostStreak):
+        await StreakLostSheet.show(context, lostStreak);
+      case null:
+        break;
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _setupSub?.cancel();
     _purchases.removeListener(_onPurchasesChanged);
+    _streak.removeListener(_onPurchasesChanged);
+    _social.removeListener(_onPurchasesChanged);
     super.dispose();
+  }
+
+  void _openSocial() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SocialScreen()),
+    );
   }
 
   void _openQuiz(QuizMode mode) {
@@ -79,6 +131,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _openScaleRun();
       return;
     }
+    final settings = await QuizSettings.load();
+    if (!await settings.trialUsed(QuizSettings.modeScaleRun)) {
+      _showTrialToast('Scale Running');
+      if (mounted) _openScaleRun();
+      return;
+    }
+    if (!mounted) return;
     final unlocked = await PaywallSheet.show(context);
     if (unlocked && mounted) _openScaleRun();
   }
@@ -96,8 +155,48 @@ class _HomeScreenState extends State<HomeScreen> {
       _openInversionRun();
       return;
     }
+    final settings = await QuizSettings.load();
+    if (!await settings.trialUsed(QuizSettings.modeInversionRun)) {
+      _showTrialToast('Inversion Running');
+      if (mounted) _openInversionRun();
+      return;
+    }
+    if (!mounted) return;
     final unlocked = await PaywallSheet.show(context);
     if (unlocked && mounted) _openInversionRun();
+  }
+
+  void _openJamMode() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => JamModeScreen(midi: widget.midi),
+      ),
+    );
+  }
+
+  Future<void> _openJamModeGated() async {
+    if (_purchases.isPro) {
+      _openJamMode();
+      return;
+    }
+    final settings = await QuizSettings.load();
+    if (!await settings.trialUsed(QuizSettings.modeJam)) {
+      _showTrialToast('Jam Mode');
+      if (mounted) _openJamMode();
+      return;
+    }
+    if (!mounted) return;
+    final unlocked = await PaywallSheet.show(context);
+    if (unlocked && mounted) _openJamMode();
+  }
+
+  /// Announces a mode's one free trial session. Shown once, right before the
+  /// mode opens unpaywalled for the first time.
+  void _showTrialToast(String modeLabel) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Your first $modeLabel session is free — enjoy!')),
+    );
   }
 
   void _openMonitor() {
@@ -112,6 +211,14 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const SettingsScreen(),
+      ),
+    );
+  }
+
+  void _openStats() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const StatsScreen(),
       ),
     );
   }
@@ -137,14 +244,14 @@ class _HomeScreenState extends State<HomeScreen> {
               _ModeCard(
                 title: 'Scales',
                 subtitle: 'Play scales from a random key, note by note',
-                imagePath: 'assets/icon/Icon_Scales.jpg',
+                imagePath: 'assets/icon/Icon_Scales.png',
                 onTap: () => _openQuiz(QuizMode.scale),
               ),
               const SizedBox(height: 14),
               _ModeCard(
                 title: 'Chords',
                 subtitle: 'Build the named chord, holding all the notes at once',
-                imagePath: 'assets/icon/Icon_Chords.jpg',
+                imagePath: 'assets/icon/Icon_Chords.png',
                 onTap: () => _openQuiz(QuizMode.chord),
               ),
               const SizedBox(height: 14),
@@ -152,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Scale Running',
                 subtitle:
                     'Hold chords and run their modes in time, key by key',
-                imagePath: 'assets/icon/Icon_Running.jpg',
+                imagePath: 'assets/icon/Icon_Running.png',
                 locked: !_purchases.isPro,
                 onTap: _openScaleRunGated,
               ),
@@ -161,9 +268,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Inversion Running',
                 subtitle:
                     'Walk a chord up its inversions an octave and back down',
-                imagePath: 'assets/icon/invert-run.jpg',
+                imagePath: 'assets/icon/invert-run.png',
                 locked: !_purchases.isPro,
                 onTap: _openInversionRunGated,
+              ),
+              const SizedBox(height: 14),
+              _ModeCard(
+                title: 'Jam Mode',
+                subtitle:
+                    'Comp diatonic chords in time, one per bar, in a single key',
+                imagePath: 'assets/icon/Jam.png',
+                locked: !_purchases.isPro,
+                onTap: _openJamModeGated,
               ),
             ],
           ),
@@ -185,27 +301,58 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ShaderMask(
-              shaderCallback: (b) => AppColors.accentGradient.createShader(b),
-              child: const Text(
-                'Scale Runner',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ShaderMask(
+                  shaderCallback: (b) =>
+                      AppColors.accentGradient.createShader(b),
+                  child: const Text(
+                    'Scale Runner',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const Text('Train your scales & chords',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          ],
+              const Text('Make music theory practical',
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            ],
+          ),
         ),
-        const Spacer(),
+        if (_streak.currentStreak > 0) ...[
+          _StreakBadge(
+            streak: _streak.currentStreak,
+            activeToday: _streak.practicedToday,
+            onTap: _openStats,
+          ),
+          const SizedBox(width: 4),
+        ],
         IconButton(
-          icon: const Icon(Icons.info_outline),
+          icon: Badge(
+            isLabelVisible: _social.unreadCount > 0,
+            label: Text('${_social.unreadCount}'),
+            child: const Icon(Icons.group_outlined),
+          ),
+          color: AppColors.textSecondary,
+          tooltip: 'Friends',
+          onPressed: _openSocial,
+        ),
+        IconButton(
+          icon: const Icon(Icons.bar_chart_outlined),
+          color: AppColors.textSecondary,
+          tooltip: 'Stats',
+          onPressed: _openStats,
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
           color: AppColors.textSecondary,
           tooltip: 'Settings',
           onPressed: _openSettings,
@@ -333,6 +480,52 @@ class _ModeCard extends StatelessWidget {
             else
               const Icon(Icons.arrow_forward_ios,
                   size: 16, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The daily practice streak pill: flame + day count. Bright when today's
+/// practice is done, dimmed while the day's session is still owed.
+class _StreakBadge extends StatelessWidget {
+  const _StreakBadge({
+    required this.streak,
+    required this.activeToday,
+    required this.onTap,
+  });
+
+  final int streak;
+  final bool activeToday;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = activeToday ? const Color(0xFFFF9F43) : AppColors.textMuted;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_fire_department, size: 16, color: color),
+            const SizedBox(width: 3),
+            Text(
+              '$streak',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
           ],
         ),
       ),

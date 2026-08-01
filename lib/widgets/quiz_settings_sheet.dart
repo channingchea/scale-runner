@@ -16,11 +16,11 @@ class QuizSettingsSheet extends StatefulWidget {
     required this.mode,
     required this.settings,
     required this.onChanged,
+    required this.onKeysChanged,
     required this.onFormulaHintChanged,
     required this.onDotsHintChanged,
     required this.onStatsBarChanged,
     required this.onBeatIndicatorChanged,
-    required this.onNoteSoundChanged,
     required this.onResetStats,
   });
 
@@ -29,6 +29,9 @@ class QuizSettingsSheet extends StatefulWidget {
 
   /// Called whenever the enabled set changes (with the new set of names).
   final ValueChanged<Set<String>> onChanged;
+
+  /// Called whenever the enabled root-key selection changes.
+  final ValueChanged<Set<int>> onKeysChanged;
 
   /// Called whenever the formula-hint toggle changes.
   final ValueChanged<bool> onFormulaHintChanged;
@@ -42,9 +45,6 @@ class QuizSettingsSheet extends StatefulWidget {
   /// Called whenever the metronome beat-indicator toggle changes.
   final ValueChanged<bool> onBeatIndicatorChanged;
 
-  /// Called whenever the note-sound toggle changes.
-  final ValueChanged<bool> onNoteSoundChanged;
-
   /// Called when the user confirms a stats reset.
   final VoidCallback onResetStats;
 
@@ -54,11 +54,11 @@ class QuizSettingsSheet extends StatefulWidget {
     required QuizMode mode,
     required QuizSettings settings,
     required ValueChanged<Set<String>> onChanged,
+    required ValueChanged<Set<int>> onKeysChanged,
     required ValueChanged<bool> onFormulaHintChanged,
     required ValueChanged<bool> onDotsHintChanged,
     required ValueChanged<bool> onStatsBarChanged,
     required ValueChanged<bool> onBeatIndicatorChanged,
-    required ValueChanged<bool> onNoteSoundChanged,
     required VoidCallback onResetStats,
   }) {
     return showModalBottomSheet<void>(
@@ -72,11 +72,11 @@ class QuizSettingsSheet extends StatefulWidget {
         mode: mode,
         settings: settings,
         onChanged: onChanged,
+        onKeysChanged: onKeysChanged,
         onFormulaHintChanged: onFormulaHintChanged,
         onDotsHintChanged: onDotsHintChanged,
         onStatsBarChanged: onStatsBarChanged,
         onBeatIndicatorChanged: onBeatIndicatorChanged,
-        onNoteSoundChanged: onNoteSoundChanged,
         onResetStats: onResetStats,
       ),
     );
@@ -89,6 +89,7 @@ class QuizSettingsSheet extends StatefulWidget {
 class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
   late List<String> _all;
   Set<String> _enabled = {};
+  Set<int> _enabledKeys = {};
 
   /// Scale rows whose formula panel is currently slid open (by scale name).
   final Set<String> _formulaOpen = {};
@@ -97,7 +98,6 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
   bool _dotsHint = true;
   bool _statsBar = true;
   bool _beatIndicator = true;
-  bool _noteSound = true;
   bool _loading = true;
 
   bool get _isScale => widget.mode == QuizMode.scale;
@@ -111,20 +111,20 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
 
   Future<void> _init() async {
     final enabled = await widget.settings.enabledNames(widget.mode);
+    final enabledKeys = await widget.settings.enabledRootPcs(widget.mode);
     final formulaHint = await widget.settings.formulaHintEnabled(widget.mode);
     final dotsHint = await widget.settings.dotsHintEnabled(widget.mode);
     final statsBar = await widget.settings.statsBarEnabled(widget.mode);
     final beatIndicator =
         await widget.settings.beatIndicatorEnabled(widget.mode);
-    final noteSound = await widget.settings.noteSoundEnabled();
     if (!mounted) return;
     setState(() {
       _enabled = enabled;
+      _enabledKeys = enabledKeys;
       _formulaHint = formulaHint;
       _dotsHint = dotsHint;
       _statsBar = statsBar;
       _beatIndicator = beatIndicator;
-      _noteSound = noteSound;
       _loading = false;
     });
   }
@@ -151,12 +151,6 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     setState(() => _beatIndicator = on);
     await widget.settings.setBeatIndicatorEnabled(widget.mode, on);
     widget.onBeatIndicatorChanged(on);
-  }
-
-  Future<void> _toggleNoteSound(bool on) async {
-    setState(() => _noteSound = on);
-    await widget.settings.setNoteSoundEnabled(on);
-    widget.onNoteSoundChanged(on);
   }
 
   OverlayEntry? _toast;
@@ -237,6 +231,30 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
     widget.onChanged(_enabled);
   }
 
+  Future<void> _toggleKey(int pc, bool on) async {
+    // Never allow the last enabled key to be turned off.
+    if (!on && _enabledKeys.length == 1 && _enabledKeys.contains(pc)) {
+      _showToast('Keep at least one selected');
+      return;
+    }
+    setState(() {
+      if (on) {
+        _enabledKeys.add(pc);
+      } else {
+        _enabledKeys.remove(pc);
+      }
+    });
+    await widget.settings.setEnabledRootPcs(widget.mode, _enabledKeys);
+    widget.onKeysChanged(_enabledKeys);
+  }
+
+  Future<void> _setAllKeys(bool on) async {
+    setState(() =>
+        _enabledKeys = on ? {for (var pc = 0; pc < 12; pc++) pc} : {0});
+    await widget.settings.setEnabledRootPcs(widget.mode, _enabledKeys);
+    widget.onKeysChanged(_enabledKeys);
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -306,12 +324,44 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
         ),
       );
 
+  /// One scrollable list for the whole tab. The keys section used to sit in a
+  /// fixed Column above an inner ListView, which left the list ~no height on
+  /// phone-sized sheets and made the tab feel unscrollable.
   Widget _practiceTab() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 8),
       children: [
+        _sectionHeader('Keys'),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 12, 4),
+          padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_enabledKeys.length} of 12 selected',
+                  style: const TextStyle(
+                      fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                  onPressed: () => _setAllKeys(true), child: const Text('All')),
+              TextButton(
+                  onPressed: () => _setAllKeys(false),
+                  child: const Text('None')),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [for (var pc = 0; pc < 12; pc++) _keyChip(pc)],
+          ),
+        ),
+        _sectionDivider(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
           child: Row(
             children: [
               Expanded(
@@ -327,14 +377,26 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
             ],
           ),
         ),
-        Flexible(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 8),
-            children: _isScale ? _groupedScaleTiles() : _flatTiles(_all),
-          ),
-        ),
+        ...(_isScale ? _groupedScaleTiles() : _flatTiles(_all)),
       ],
+    );
+  }
+
+  Widget _keyChip(int pc) {
+    final selected = _enabledKeys.contains(pc);
+    return ChoiceChip(
+      label: Text(pitchClassNames[pc]),
+      selected: selected,
+      onSelected: (v) => _toggleKey(pc, v),
+      labelStyle: TextStyle(
+        color: selected ? const Color(0xFF06251F) : AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+      selectedColor: AppColors.accent,
+      backgroundColor: AppColors.surfaceHigh,
+      side: BorderSide(
+          color: selected ? AppColors.accent : AppColors.border),
+      showCheckmark: false,
     );
   }
 
@@ -566,15 +628,6 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           onTap: _confirmResetStats,
-        ),
-        _sectionDivider(),
-        _sectionHeader('Sound'),
-        _hintSwitch(
-          value: _noteSound,
-          onChanged: _toggleNoteSound,
-          title: 'Note sound',
-          subtitle: 'Play a piano tone when you press a key '
-              '(turn off if your keyboard has its own sound)',
         ),
       ],
     );
