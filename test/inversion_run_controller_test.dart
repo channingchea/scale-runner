@@ -283,6 +283,18 @@ void main() {
       expect(c.stepsCompleted, 0);
       expect(c.notesWrong, 0);
     });
+
+    test('beatsUntilDownbeat counts down to the downbeat at session start', () {
+      final c = makeTempoController();
+      c.start();
+      final expected = [4, 3, 2, 1];
+      for (var i = 0; i < c.beatsPerBar; i++) {
+        c.onBeat();
+        expect(c.beatsUntilDownbeat, expected[i]);
+      }
+      c.onBeat();
+      expect(c.beatsUntilDownbeat, 0);
+    });
   });
 
   group('tempo mode: beat-driven advance', () {
@@ -315,15 +327,36 @@ void main() {
       expect(c.stepsCompleted, 0);
     });
 
-    test('held late-but-close counts (amber), held very late misses', () {
+    test('completed just before the settle tick scores by its real offset '
+        '(amber), locked in even against a release', () {
       var since = 0;
       final c = makeTempoController(sinceBeat: () => since);
       countIn(c);
-      since = 100; // 100ms off → close
+      since = 500; // 100ms before the settle tick → close
       holdCurrentVoicing(c);
+      since = 0;
       c.onBeat();
       expect(c.resultAt(0), StepResult.close);
       expect(c.streak, 1);
+    });
+
+    test('an early completion survives a release before the tick (staccato)',
+        () {
+      var since = 0;
+      final c = makeTempoController(sinceBeat: () => since);
+      countIn(c);
+      since = 550; // 50ms before the settle tick → onBeat
+      final notes = List<int>.from(c.currentStep.notes);
+      for (final n in notes) {
+        c.pressKey(n);
+      }
+      for (final n in notes) {
+        c.releaseKey(n); // staccato: nothing held when the beat lands
+      }
+      since = 0;
+      c.onBeat();
+      expect(c.resultAt(0), StepResult.onBeat);
+      expect(c.stepsCompleted, 1);
     });
 
     test('completing the cycle on beats rolls over to a new round', () {
@@ -336,6 +369,180 @@ void main() {
       }
       expect(c.cyclesCompleted, 1);
       expect(c.stepIndex, 0);
+    });
+  });
+
+  group('tempo mode: inter-chord count-in at cycle boundary', () {
+    test('cycle rollover enters a count-in of interChordCountInBeats length', () {
+      final c = makeTempoController();
+      countIn(c);
+      final steps = c.stepCount;
+      for (var i = 0; i < steps; i++) {
+        holdCurrentVoicing(c);
+        c.onBeat();
+      }
+      // The final beat of the cycle rolled straight into a fresh inter-chord
+      // count-in rather than back into running.
+      expect(c.cyclesCompleted, 1);
+      expect(c.phase, InversionPhase.countingIn);
+      expect(c.countInBeat, 0); // nothing ticked yet
+      for (var i = 1; i <= c.interChordCountInBeats; i++) {
+        c.onBeat();
+        expect(c.countInBeat, i);
+        expect(c.phase, InversionPhase.countingIn);
+      }
+      c.onBeat(); // downbeat: new cycle's step 0 begins
+      expect(c.phase, InversionPhase.running);
+      expect(c.stepIndex, 0);
+    });
+
+    test('inter-chord count-in length differs from beatsPerBar', () {
+      final c = InversionRunController(
+        tempoMode: true,
+        beatsPerBar: 4,
+        interChordCountInBeats: 2,
+        seed: 1,
+      );
+      c.beatPeriodMs = () => 600;
+      c.msSinceBeat = () => 0;
+      countIn(c); // session-start count-in uses beatsPerBar=4
+      final steps = c.stepCount;
+      for (var i = 0; i < steps; i++) {
+        holdCurrentVoicing(c);
+        c.onBeat();
+      }
+      // Cycle-boundary count-in should reach the downbeat after
+      // interChordCountInBeats+1=3 ticks, not beatsPerBar+1=5.
+      c.onBeat();
+      c.onBeat();
+      expect(c.phase, InversionPhase.countingIn); // 2 ticks in, not yet
+      c.onBeat();
+      expect(c.phase, InversionPhase.running);
+    });
+
+    test('presses during the inter-chord count-in are not judged', () {
+      final c = makeTempoController();
+      countIn(c);
+      final steps = c.stepCount;
+      for (var i = 0; i < steps; i++) {
+        holdCurrentVoicing(c);
+        c.onBeat();
+      }
+      expect(c.phase, InversionPhase.countingIn);
+      final before = c.stepsCompleted;
+      c.pressKey(c.currentStep.notes.first);
+      expect(c.stepsCompleted, before);
+    });
+
+    test('beatsUntilDownbeat counts down using interChordCountInBeats, not beatsPerBar', () {
+      final c = makeTempoController();
+      countIn(c);
+      final steps = c.stepCount;
+      for (var i = 0; i < steps; i++) {
+        holdCurrentVoicing(c);
+        c.onBeat();
+      }
+      expect(c.phase, InversionPhase.countingIn);
+      final expected = [2, 1]; // interChordCountInBeats defaults to 2
+      for (var i = 0; i < c.interChordCountInBeats; i++) {
+        c.onBeat();
+        expect(c.beatsUntilDownbeat, expected[i]);
+      }
+      c.onBeat();
+      expect(c.phase, InversionPhase.running);
+      expect(c.beatsUntilDownbeat, 0);
+    });
+  });
+
+  group('self-paced rollover is unaffected by the inter-chord count-in', () {
+    test('self-paced cycle completion still rolls over instantly', () {
+      final c = makeController();
+      c.start();
+      final steps = c.stepCount;
+      for (var i = 0; i < steps; i++) {
+        tapCurrentVoicing(c);
+      }
+      expect(c.cyclesCompleted, 1);
+      expect(c.phase, InversionPhase.running); // never counts in
+      expect(c.stepIndex, 0);
+    });
+  });
+
+  group('session tracking (onSessionEnd, chord tally, reset on restart)', () {
+    test('onSessionEnd fires on stop() after a started session', () {
+      final c = makeController();
+      var fired = 0;
+      c.onSessionEnd = () => fired++;
+      c.start();
+      c.stop();
+      expect(fired, 1);
+    });
+
+    test('onSessionEnd does not fire stopping an already-idle controller', () {
+      final c = makeController();
+      var fired = 0;
+      c.onSessionEnd = () => fired++;
+      c.stop(); // never started
+      expect(fired, 0);
+    });
+
+    test('a correct voicing tallies the current chord type', () {
+      final c = makeController();
+      c.start();
+      final chordName = c.chordLabel.split(' ').sublist(1).join(' ');
+      tapCurrentVoicing(c);
+      final snapshot = c.chordSnapshot;
+      expect(snapshot[chordName], isNotNull);
+      expect(snapshot[chordName]!.$1, greaterThanOrEqualTo(1)); // attempts
+      expect(snapshot[chordName]!.$2, 1); // correct
+    });
+
+    test('a wrong-pitch press tallies as an incorrect attempt', () {
+      final c = makeController();
+      c.start();
+      final chordName = c.chordLabel.split(' ').sublist(1).join(' ');
+      // A note nowhere near the chord's pitch classes.
+      final wrongNote = c.currentStep.notes.first + 1;
+      c.pressKey(wrongNote);
+      final snapshot = c.chordSnapshot;
+      expect(snapshot[chordName]!.$1, 1); // attempts
+      expect(snapshot[chordName]!.$2, 0); // correct
+    });
+
+    test('weakestChord picks the lowest-accuracy attempted chord', () {
+      final c = makeController(chords: [
+        for (final f in commonChords)
+          if (InversionRunController.defaultChordNames.contains(f.name)) f,
+      ]);
+      c.start();
+      // Force a wrong press against the current chord, then move on.
+      final wrongNote = c.currentStep.notes.first + 1;
+      c.pressKey(wrongNote);
+      expect(c.weakestChord, isNotNull);
+      expect(c.weakestChord!.value.accuracy, 0);
+    });
+
+    test('accuracy is 0 for an empty session and updates after a hit', () {
+      final c = makeController();
+      c.start();
+      expect(c.accuracy, 0);
+      tapCurrentVoicing(c);
+      expect(c.accuracy, 1);
+    });
+
+    test('starting a new session resets stats and chord tallies', () {
+      final c = makeController();
+      c.start();
+      tapCurrentVoicing(c);
+      expect(c.stepsCompleted, greaterThan(0));
+      expect(c.chordSnapshot, isNotEmpty);
+      c.stop();
+      c.start(); // fresh session
+      expect(c.stepsCompleted, 0);
+      expect(c.cyclesCompleted, 0);
+      expect(c.notesWrong, 0);
+      expect(c.streak, 0);
+      expect(c.chordSnapshot, isEmpty);
     });
   });
 }

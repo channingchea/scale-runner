@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show MethodChannel, PlatformException;
@@ -14,7 +15,96 @@ class MidiNoteEvent {
   const MidiNoteEvent(this.note, this.velocity, this.isOn);
 
   @override
+  bool operator ==(Object other) =>
+      other is MidiNoteEvent &&
+      other.note == note &&
+      other.velocity == velocity &&
+      other.isOn == isOn;
+
+  @override
+  int get hashCode => Object.hash(note, velocity, isOn);
+
+  @override
   String toString() => '${isOn ? "ON " : "OFF"} note=$note vel=$velocity';
+}
+
+/// Number of data bytes that follow [status], or null if the message type
+/// isn't one we know how to skip safely (e.g. Sysex, which needs an 0xF7
+/// terminator scan rather than a fixed length).
+int? _dataByteCountFor(int status) {
+  switch (status) {
+    case 0xF1:
+    case 0xF3:
+      return 1;
+    case 0xF2:
+      return 2;
+    case 0xF6:
+    case 0xF7:
+      return 0;
+  }
+  switch (status & 0xF0) {
+    case 0xC0: // Program Change
+    case 0xD0: // Channel Pressure
+      return 1;
+    case 0x80: // Note Off
+    case 0x90: // Note On
+    case 0xA0: // Poly Key Pressure
+    case 0xB0: // Control Change
+    case 0xE0: // Pitch Bend
+      return 2;
+    default:
+      return null; // 0xF0 (Sysex start) or anything unrecognized
+  }
+}
+
+/// Decodes a raw MIDI byte stream into Note On/Off events.
+///
+/// A single packet can contain several coalesced messages — BLE MIDI in
+/// particular batches simultaneous note-ons (chords) into one packet — so
+/// this walks the whole buffer rather than reading only the first message.
+/// It also supports MIDI running status, where a message omits its own
+/// status byte and reuses the previous one (common on BLE keyboards sending
+/// chords). Non-note channel messages are skipped by their known length;
+/// System Real-Time bytes (0xF8-0xFF) are skipped without disturbing running
+/// status. An unrecognized/Sysex status stops parsing the rest of the packet
+/// rather than misreading subsequent bytes as notes.
+///
+/// [lastStatus] seeds running status for a buffer that starts mid-message
+/// (unused across real packets today, but keeps this testable standalone).
+List<MidiNoteEvent> parseMidiBytes(Uint8List bytes, {int? lastStatus}) {
+  final events = <MidiNoteEvent>[];
+  int? status = lastStatus;
+  int i = 0;
+  while (i < bytes.length) {
+    final byte = bytes[i];
+    if (byte >= 0xF8) {
+      // System Real-Time: single byte, doesn't touch running status.
+      i++;
+      continue;
+    }
+    if (byte & 0x80 != 0) {
+      status = byte;
+      i++;
+    }
+    if (status == null) break; // data byte with no status yet - malformed
+    final needed = _dataByteCountFor(status);
+    if (needed == null) break; // unknown/Sysex - bail out safely
+    if (i + needed > bytes.length) break; // incomplete message at packet tail
+
+    if (needed == 2 && (status & 0xF0 == 0x80 || status & 0xF0 == 0x90)) {
+      final note = bytes[i];
+      final velocity = bytes[i + 1];
+      // 0x90 Note On with velocity 0 is, by convention, a Note Off (some
+      // keyboards use this instead of a real 0x80 message).
+      if (status & 0xF0 == 0x90 && velocity > 0) {
+        events.add(MidiNoteEvent(note, velocity, true));
+      } else {
+        events.add(MidiNoteEvent(note, 0, false));
+      }
+    }
+    i += needed;
+  }
+  return events;
 }
 
 /// Wraps `flutter_midi_command` so the rest of the app never imports the
@@ -60,6 +150,11 @@ class MidiService {
   MidiDevice? get connectedDevice => _connected;
   bool get isConnected => _connected != null;
 
+  /// Whether the connected device is Bluetooth LE. BLE is the only transport
+  /// with meaningful input latency (radio batching); USB/network/virtual are
+  /// near-zero, so latency correction should apply only when this is true.
+  bool get isBleConnected => _connected?.type == 'BLE';
+
   /// Begin listening to the global MIDI receive + setup streams. Safe to call
   /// repeatedly; both subscriptions are created once. Subscribing the plugin's
   /// streams more than once throws, so all fan-out goes through our broadcast
@@ -71,10 +166,13 @@ class MidiService {
 
   /// Single internal handler for every OS MIDI setup change. Reconciles
   /// connection state, auto-reconnects a replugged device, then notifies UI.
-  /// Runs regardless of whether any screen is currently listening.
+  /// Runs regardless of whether any screen is currently listening. Fetches
+  /// the live device list once and shares it with both steps below instead
+  /// of each querying the plugin separately.
   Future<void> _handleSetupChanged(String event) async {
-    await refreshConnectionState();
-    await _tryAutoReconnect();
+    final live = await devices();
+    await refreshConnectionState(liveDevices: live);
+    await _tryAutoReconnect(liveDevices: live);
     if (!_setupController.isClosed) _setupController.add(event);
   }
 
@@ -107,22 +205,22 @@ class MidiService {
   Stream<String> get onSetupChanged => _setupController.stream;
 
   /// Clear [_connected] if the tracked device is no longer present (or now
-  /// reports disconnected) in the live MIDI device list.
-  Future<void> refreshConnectionState() async {
+  /// reports disconnected) in the live MIDI device list. Pass [liveDevices]
+  /// to reuse an already-fetched list instead of querying the plugin again.
+  Future<void> refreshConnectionState({List<MidiDevice>? liveDevices}) async {
     if (_connected == null) return;
-    final live = await devices();
-    final stillThere = live.any(
-      (d) => d.id == _connected!.id && d.connected,
-    );
+    final live = liveDevices ?? await devices();
+    final stillThere = live.any((d) => d.id == _connected!.id && d.connected);
     if (!stillThere) _connected = null;
   }
 
   /// If nothing is connected but the last-used device has reappeared in the
   /// live list, silently reconnect to it. Lets a replugged keyboard come back
-  /// without the user re-picking it.
-  Future<void> _tryAutoReconnect() async {
+  /// without the user re-picking it. Pass [liveDevices] to reuse an
+  /// already-fetched list instead of querying the plugin again.
+  Future<void> _tryAutoReconnect({List<MidiDevice>? liveDevices}) async {
     if (_connected != null || _lastDeviceId == null) return;
-    final live = await devices();
+    final live = liveDevices ?? await devices();
     MidiDevice? match;
     for (final d in live) {
       // Prefer an id match; fall back to name for devices that re-enumerate
@@ -181,21 +279,12 @@ class MidiService {
   void _handlePacket(MidiPacket packet) {
     final data = packet.data;
     if (data.isEmpty) return;
-    _rawController
-        .add(data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' '));
+    _rawController.add(
+      data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' '),
+    );
 
-    // MIDI status byte: high nibble = message type, low nibble = channel.
-    final status = data[0] & 0xF0;
-    if (data.length < 3) return;
-    final note = data[1];
-    final velocity = data[2];
-
-    // 0x90 = Note On, 0x80 = Note Off. A Note On with velocity 0 is, by
-    // convention, a Note Off (running-status keyboards do this).
-    if (status == 0x90 && velocity > 0) {
-      _noteController.add(MidiNoteEvent(note, velocity, true));
-    } else if (status == 0x80 || (status == 0x90 && velocity == 0)) {
-      _noteController.add(MidiNoteEvent(note, 0, false));
+    for (final event in parseMidiBytes(data)) {
+      _noteController.add(event);
     }
   }
 

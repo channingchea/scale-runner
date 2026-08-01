@@ -1,16 +1,27 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../audio/note_player.dart';
 import '../theme/app_theme.dart';
+import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
+import '../purchases/paywall_sheet.dart';
+import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/inversion_run_controller.dart';
+import '../social/social_service.dart';
+import '../streak/streak_service.dart';
 import '../widgets/inversion_run_settings_sheet.dart';
+import '../widgets/inversion_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
+import '../widgets/reminder_prompt_sheet.dart';
+import '../widgets/rotate_hint_banner.dart';
+import '../widgets/streak_sheets.dart';
 
 /// The Inversion Running drill: play a chord up through its inversions across a
 /// full octave, then back down. Self-paced (each correct voicing advances) or
@@ -45,6 +56,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     _bootstrap();
   }
 
@@ -80,17 +92,31 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     _showDots = await settings.invShowDots();
     _showFormula = await settings.invShowFormula();
     final chords = await settings.invEnabledChords();
+    final difficulty = await settings.timingDifficulty();
+    final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
-    final next =
-        InversionRunController(chords: chords, tempoMode: _tempoMode);
+    final next = InversionRunController(
+      chords: chords,
+      tempoMode: _tempoMode,
+      onBeatMs: difficulty.onBeatMs,
+      closeMs: difficulty.closeMs,
+    );
+    final latency = await resolveInputLatencyMs(widget.midi, settings);
     next
       ..msSinceBeat = (() => metronome.msSinceLastTick)
       ..beatPeriodMs = (() => metronome.beatPeriodMs)
+      ..inputLatencyMs = latency
       ..onAnyPress = (note) {
         if (_noteSound) _notes.play(note);
         if (_tempoMode && next.running) metronome.registerHit();
-      };
-    metronome.onBeat = next.onBeat;
+      }
+      ..onSessionEnd = () => _endSession(next);
+    metronome
+      ..inputLatencyMs = latency
+      ..onBeatMs = difficulty.onBeatMs
+      ..closeMs = difficulty.closeMs
+      ..hapticEnabled = hapticEnabled
+      ..onBeat = next.onBeat;
     next.bindMidi(widget.midi);
     if (!mounted) {
       next.dispose();
@@ -113,6 +139,48 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     }
   }
 
+  /// A session has ended (manual stop, or metronome collapse in tempo mode):
+  /// snapshot its stats, fold them into the persisted lifetime aggregates,
+  /// and show the summary. Guarded so it runs once and only when something
+  /// was actually judged.
+  bool _endingSession = false;
+  Future<void> _endSession(InversionRunController c) async {
+    final stats = InversionSessionStats.from(c);
+    if (_endingSession || !stats.hasData) return;
+    _endingSession = true;
+    final settings = _settings;
+    if (settings != null) {
+      await settings.mergeInversionStats(c.chordSnapshot);
+      unawaited(
+          SocialService.instance.recordWeeklySessionFrom(c.chordSnapshot));
+      unawaited(SocialService.instance.recordModeScores());
+    }
+    final streakUpdate = await StreakService.instance.recordPractice();
+    if (mounted) {
+      await InversionSessionSummarySheet.show(context, stats);
+    }
+    if (streakUpdate.milestone case final m? when mounted) {
+      await StreakMilestoneSheet.show(context, m);
+    }
+    await _maybeShowPostTrialPaywall(settings, QuizSettings.modeInversionRun);
+    if (mounted) await ReminderPromptSheet.maybeShow(context);
+    _endingSession = false;
+  }
+
+  /// If this session was played free-trial (Pro not owned, trial not yet
+  /// marked used), consume the trial now and open the paywall right behind
+  /// the summary sheet. A session interrupted before reaching the summary
+  /// (crash, back-out) never reaches here, so the trial survives — intentional.
+  Future<void> _maybeShowPostTrialPaywall(
+    QuizSettings? settings,
+    String mode,
+  ) async {
+    if (settings == null || PurchaseService.instance.isPro) return;
+    if (await settings.trialUsed(mode)) return;
+    await settings.markTrialUsed(mode);
+    if (mounted) await PaywallSheet.show(context);
+  }
+
   Future<void> _openSettings() async {
     final settings = _settings;
     if (settings == null) return;
@@ -125,6 +193,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _controller?.dispose();
     _metronome?.dispose();
     _notes.dispose();
@@ -154,6 +223,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
                       child: Column(
                         children: [
                           const SizedBox(height: _topBarHeight),
+                          if (_settings != null)
+                            RotateHintBanner(settings: _settings!),
                           Expanded(child: _buildPrompt(controller, compact)),
                           _buildKeyboard(controller, keyboardHeight),
                         ],
@@ -209,7 +280,9 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
         'Play the chord up through its inversions, then back down',
         textAlign: TextAlign.center,
         style: TextStyle(
-            color: AppColors.textSecondary, fontSize: compact ? 12 : 14),
+          color: AppColors.textSecondary,
+          fontSize: compact ? 12 : 14,
+        ),
       ),
       SizedBox(height: compact ? 6 : 12),
       FittedBox(
@@ -247,8 +320,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
           c.running
               ? c.stepLabel
               : c.countingIn
-                  ? 'Count-in…'
-                  : 'Press Start',
+              ? 'Count-in…'
+              : 'Press Start',
           style: TextStyle(
             fontSize: compact ? 15 : 18,
             fontWeight: FontWeight.w600,
@@ -286,8 +359,10 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
           );
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
-        padding:
-            EdgeInsets.symmetric(horizontal: 20, vertical: compact ? 4 : 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: compact ? 4 : 8,
+        ),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: constraints.maxHeight),
           child: Column(
@@ -326,6 +401,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
                 width: active && i == c.stepIndex ? 2 : 1,
               ),
             ),
+            child: _dotIcon(c, i),
           ),
         ],
       ],
@@ -345,6 +421,31 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     return i < c.stepIndex ? AppColors.correct : Colors.transparent;
   }
 
+  /// A glyph inside the dot so a tempo-mode result never reads by color alone
+  /// (colorblind-safe): check = on-beat, dash = close, x = missed. Self-paced
+  /// mode only ever marks "completed" (no error state), so it stays plain.
+  Widget? _dotIcon(InversionRunController c, int i) {
+    if (!_tempoMode || !c.running) return null;
+    return switch (c.resultAt(i)) {
+      StepResult.onBeat => const Icon(
+        Icons.check,
+        size: 11,
+        color: AppColors.bg,
+      ),
+      StepResult.close => const Icon(
+        Icons.remove,
+        size: 11,
+        color: AppColors.bg,
+      ),
+      StepResult.missed => const Icon(
+        Icons.close,
+        size: 11,
+        color: AppColors.bg,
+      ),
+      null => null,
+    };
+  }
+
   Widget _buildRunControl(InversionRunController c) {
     if (c.phase == InversionPhase.idle) {
       return FilledButton.icon(
@@ -358,7 +459,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '${c.countInBeat == 0 ? 1 : c.countInBeat}',
+            '${c.beatsUntilDownbeat}',
             style: const TextStyle(
               fontSize: 40,
               fontWeight: FontWeight.w800,
@@ -366,8 +467,10 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
               fontFeatures: tabularFigures,
             ),
           ),
-          const Text('Get ready…',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const Text(
+            'Get ready…',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
         ],
       );
     }
@@ -397,15 +500,19 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(value,
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
-                fontFeatures: tabularFigures)),
-        Text(label,
-            style:
-                const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+            fontFeatures: tabularFigures,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+        ),
       ],
     );
   }
@@ -417,16 +524,18 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         child: SizedBox(
           height: height,
-          child: PianoKeyboard(
-            // Transposing: lowest key is the round's root, fixed display octave.
-            lowMidi: c.lowMidi,
-            octaves: _keyboardOctaves,
-            feedbackFor: c.feedbackFor,
-            isTargetHint: (_showDots && (c.running || c.countingIn))
-                ? c.isTargetHint
-                : (_) => false,
-            onKeyDown: c.pressKey,
-            onKeyUp: c.releaseKey,
+          child: RepaintBoundary(
+            child: PianoKeyboard(
+              // Transposing: lowest key is the round's root, fixed display octave.
+              lowMidi: c.lowMidi,
+              octaves: _keyboardOctaves.toDouble(),
+              feedbackFor: c.feedbackFor,
+              isTargetHint: (_showDots && (c.running || c.countingIn))
+                  ? c.isTargetHint
+                  : (_) => false,
+              onKeyDown: c.pressKey,
+              onKeyUp: c.releaseKey,
+            ),
           ),
         ),
       ),

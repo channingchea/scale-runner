@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,14 +13,36 @@ enum BeatAccuracy { onBeat, close, off }
 
 /// Owns the metronome state (tempo, ticking, beat-timing judgment) so the
 /// quiz screen can feed it key presses while [MetronomeBar] renders it.
+///
+/// Drift-free: beats are scheduled at absolute ideal times against a fixed
+/// epoch ([clock.now] at [start]), each tick arming a one-shot timer for the
+/// next ideal time. A timer that fires late shortens the next delay instead of
+/// pushing every following beat back, so error never accumulates — and timing
+/// judgment compares against the *ideal* beat time, not the jittery moment the
+/// timer happened to fire.
 class MetronomeController extends ChangeNotifier {
-  MetronomeController({this._bpm = 100, this.onBpmChanged});
+  MetronomeController({this._bpm = 100, this.onBpmChanged, bool silent = false})
+      : _player = silent ? null : _makePlayer();
 
   static const minBpm = 40;
   static const maxBpm = 240;
 
   /// Reports tempo changes (e.g. to persist them).
   final ValueChanged<int>? onBpmChanged;
+
+  /// Estimated input latency (ms) from key-strike to event, subtracted from
+  /// each hit before judging so the flash matches when the key was really
+  /// pressed. Mirrors ScaleRunController.inputLatencyMs; set per transport.
+  int inputLatencyMs = 0;
+
+  /// Timing windows (ms) for [registerHit]'s green/amber/red verdicts, set by
+  /// the screen from the global timing-difficulty setting.
+  int onBeatMs = 70;
+  int closeMs = 150;
+
+  /// Whether each tick buzzes the device, set by the screen from the global
+  /// haptic-tick setting. Default on.
+  bool hapticEnabled = true;
 
   /// Fired on every audible tick — lets a beat-driven drill (Scale Running)
   /// share this exact clock so judged beats and the click never drift apart.
@@ -29,11 +52,18 @@ class MetronomeController extends ChangeNotifier {
   bool _running = false;
   Timer? _timer;
   Timer? _flashTimer;
-  DateTime? _lastTick;
   BeatAccuracy? _flash;
 
+  // Absolute-time scheduling state: everything is measured in ms since _epoch.
+  DateTime? _epoch;
+  int _lastIdealTickMs = 0; // ideal time of the most recent tick
+  int _nextIdealTickMs = 0; // ideal time the armed timer is aiming for
+
   // Low-latency player preloaded with the click so each tick only seeks+plays.
-  final _player = AudioPlayer()
+  // Null when constructed silent (tests), which also skips haptics.
+  final AudioPlayer? _player;
+
+  static AudioPlayer _makePlayer() => AudioPlayer()
     ..setPlayerMode(PlayerMode.lowLatency)
     ..setReleaseMode(ReleaseMode.stop)
     ..setSource(AssetSource('audio/click.wav'));
@@ -49,18 +79,28 @@ class MetronomeController extends ChangeNotifier {
   /// Beat period in ms at the current tempo (for external timing judgment).
   int get beatPeriodMs => _periodMs;
 
-  /// Milliseconds since the most recent tick (0 when not yet ticking).
-  int get msSinceLastTick {
-    final last = _lastTick;
-    if (last == null) return 0;
-    return DateTime.now().difference(last).inMilliseconds;
+  /// Ms elapsed since the epoch set at [start] (0 when never started).
+  int get _elapsedMs {
+    final epoch = _epoch;
+    if (epoch == null) return 0;
+    return clock.now().difference(epoch).inMilliseconds;
   }
+
+  /// Milliseconds since the most recent tick's *ideal* time (0 when not yet
+  /// ticking). Judging against the ideal beat keeps timing verdicts honest
+  /// even when the OS fires the tick timer a little late.
+  int get msSinceLastTick =>
+      _epoch == null ? 0 : _elapsedMs - _lastIdealTickMs;
 
   void toggle() => _running ? stop() : start();
 
   void start() {
     _running = true;
-    _restartTimer();
+    _epoch = clock.now();
+    _lastIdealTickMs = 0;
+    _nextIdealTickMs = _periodMs;
+    _tickNow(); // the downbeat, at ideal time 0
+    _scheduleNext();
     notifyListeners();
   }
 
@@ -75,7 +115,12 @@ class MetronomeController extends ChangeNotifier {
 
   void nudge(int delta) {
     _bpm = (_bpm + delta).clamp(minBpm, maxBpm);
-    if (_running) _restartTimer(); // apply the new tempo immediately
+    if (_running) {
+      // Rebase: the next beat lands one *new* period after the previous ideal
+      // tick, so a tempo change glides instead of stuttering an extra tick.
+      _nextIdealTickMs = _lastIdealTickMs + _periodMs;
+      _scheduleNext();
+    }
     onBpmChanged?.call(_bpm);
     notifyListeners();
   }
@@ -83,13 +128,15 @@ class MetronomeController extends ChangeNotifier {
   /// Judge a key press against the nearest beat and flash the BPM readout
   /// green / amber / red. No-op when the metronome isn't running.
   void registerHit() {
-    final last = _lastTick;
-    if (!_running || last == null) return;
-    final since = DateTime.now().difference(last).inMilliseconds % _periodMs;
+    if (!_running || _epoch == null) return;
+    // Subtract input latency before judging so the flash reflects when the key
+    // was struck, not when we received the event. Wrap into [0, period).
+    final raw = msSinceLastTick - inputLatencyMs;
+    final since = ((raw % _periodMs) + _periodMs) % _periodMs;
     final offBy = math.min(since, _periodMs - since);
-    _flash = offBy <= 70
+    _flash = offBy <= onBeatMs
         ? BeatAccuracy.onBeat
-        : offBy <= 150
+        : offBy <= closeMs
             ? BeatAccuracy.close
             : BeatAccuracy.off;
     _flashTimer?.cancel();
@@ -100,19 +147,27 @@ class MetronomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _restartTimer() {
+  /// Arm a one-shot timer for the next ideal tick time. A late previous fire
+  /// yields a shorter delay (clamped at 0), so lag never accumulates.
+  void _scheduleNext() {
     _timer?.cancel();
-    _tick();
-    _timer =
-        Timer.periodic(Duration(milliseconds: _periodMs), (_) => _tick());
+    final delay = _nextIdealTickMs - _elapsedMs;
+    _timer = Timer(Duration(milliseconds: delay < 0 ? 0 : delay), _onTimer);
   }
 
-  void _tick() {
-    _lastTick = DateTime.now();
+  void _onTimer() {
+    if (!_running) return;
+    _lastIdealTickMs = _nextIdealTickMs;
+    _nextIdealTickMs += _periodMs;
+    _tickNow();
+    _scheduleNext();
+  }
+
+  void _tickNow() {
     _player
-      ..seek(Duration.zero)
+      ?..seek(Duration.zero)
       ..resume();
-    HapticFeedback.lightImpact();
+    if (_player != null && hapticEnabled) HapticFeedback.lightImpact();
     onBeat?.call();
   }
 
@@ -120,7 +175,7 @@ class MetronomeController extends ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     _flashTimer?.cancel();
-    _player.dispose();
+    _player?.dispose();
     super.dispose();
   }
 }

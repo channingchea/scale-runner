@@ -40,7 +40,6 @@ class InversionRunSettingsSheet extends StatefulWidget {
 
 class _InversionRunSettingsSheetState extends State<InversionRunSettingsSheet> {
   Set<String> _chords = QuizSettings.invChordNames.toSet();
-  bool _noteSound = true;
   bool _tempoMode = false;
   bool _showDots = true;
   bool _showFormula = true;
@@ -54,14 +53,12 @@ class _InversionRunSettingsSheetState extends State<InversionRunSettingsSheet> {
 
   Future<void> _init() async {
     final chords = await widget.settings.invEnabledChordNames();
-    final noteSound = await widget.settings.noteSoundEnabled();
     final tempoMode = await widget.settings.invTempoMode();
     final showDots = await widget.settings.invShowDots();
     final showFormula = await widget.settings.invShowFormula();
     if (!mounted) return;
     setState(() {
       _chords = chords;
-      _noteSound = noteSound;
       _tempoMode = tempoMode;
       _showDots = showDots;
       _showFormula = showFormula;
@@ -157,19 +154,6 @@ class _InversionRunSettingsSheetState extends State<InversionRunSettingsSheet> {
                           subtitle:
                               'Show the chord\'s degree formula (e.g. 1-3-5) '
                               'under the prompt.',
-                        ),
-                        _sectionDivider(),
-                        _sectionHeader('Sound'),
-                        _switchTile(
-                          value: _noteSound,
-                          onChanged: (v) async {
-                            setState(() => _noteSound = v);
-                            await widget.settings.setNoteSoundEnabled(v);
-                            widget.onChanged();
-                          },
-                          title: 'Note sound',
-                          subtitle: 'Play a piano tone when you press a key '
-                              '(turn off if your keyboard has its own sound)',
                         ),
                       ],
                     ),

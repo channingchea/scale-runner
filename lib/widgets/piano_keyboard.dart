@@ -6,7 +6,10 @@ import '../theory/music_theory.dart';
 
 /// A realistic, responsive on-screen piano.
 ///
-/// Renders [octaves] octaves starting at [lowMidi]. White keys fill the width;
+/// Renders [octaves] octaves starting at [lowMidi]. [octaves] may be fractional
+/// (e.g. 2.5 → C3–F5, MIDI 48–77) for modes that need a wider span; a whole
+/// number keeps the classic inclusive top C (e.g. 2 → C3–C5). White keys fill
+/// the width;
 /// black keys are overlaid at their true positions. Each key reports presses
 /// and releases via [onKeyDown] / [onKeyUp], and is colored by the
 /// [feedbackFor] callback so the same widget serves taps and live-MIDI glow.
@@ -26,7 +29,7 @@ class PianoKeyboard extends StatelessWidget {
   });
 
   final int lowMidi;
-  final int octaves;
+  final double octaves;
   final KeyFeedback Function(int midiNote) feedbackFor;
   final bool Function(int midiNote) isTargetHint;
   final ValueChanged<int> onKeyDown;
@@ -49,13 +52,22 @@ class PianoKeyboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final highMidi = lowMidi + octaves * 12; // inclusive top C
+    // Top of the span. A whole-number octave count keeps the classic inclusive
+    // top C (2 octaves → C3..C5). A fractional count ends on the last *white*
+    // key within the span, so the keyboard never trails off on a lone black key
+    // (2.5 octaves → C3..F5, the final white key at MIDI 77).
+    var topMidi = lowMidi + (octaves * 12).round();
+    while (!_isWhite(topMidi)) {
+      topMidi--;
+    }
     final whiteNotes = <int>[];
-    for (var n = lowMidi; n <= highMidi; n++) {
+    for (var n = lowMidi; n <= topMidi; n++) {
       if (_isWhite(n)) whiteNotes.add(n);
     }
+    // Black keys sit between two white keys, so only those strictly below the
+    // top white key qualify.
     final blackNotes = <int>[];
-    for (var n = lowMidi; n < highMidi; n++) {
+    for (var n = lowMidi; n < topMidi; n++) {
       if (!_isWhite(n)) blackNotes.add(n);
     }
 
@@ -97,7 +109,8 @@ class PianoKeyboard extends StatelessWidget {
                 // Center the black key on the gap between its two white keys.
                 // Each white key occupies whiteWidth + its 1px margin, so the
                 // gap sits at index * (whiteWidth + margin).
-                left: _whiteIndexOf(midi) * (whiteWidth + whiteKeyMargin) -
+                left:
+                    _whiteIndexOf(midi) * (whiteWidth + whiteKeyMargin) -
                     blackWidth / 2,
                 top: 0,
                 child: _BlackKey(
@@ -173,59 +186,71 @@ class _WhiteKey extends StatelessWidget {
         ? Color.alphaBlend(glow.withValues(alpha: 0.55), AppColors.whiteKey)
         : AppColors.whiteKeyShadow;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => onDown(),
-      onTapUp: (_) => onUp(),
-      onTapCancel: onUp,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 90),
-        width: width,
-        height: height,
-        margin: const EdgeInsets.symmetric(horizontal: 0.5),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [fillTop, fillBottom],
+    return Semantics(
+      label: noteName(midi),
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => onDown(),
+        onTapUp: (_) => onUp(),
+        onTapCancel: onUp,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 90),
+          width: width,
+          height: height,
+          margin: const EdgeInsets.symmetric(horizontal: 0.5),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [fillTop, fillBottom],
+            ),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(7),
+            ),
+            boxShadow: glow != null
+                ? [
+                    BoxShadow(
+                      color: glow.withValues(alpha: 0.6),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+            border: Border.all(color: AppColors.whiteKeyShadow, width: 0.5),
           ),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(7)),
-          boxShadow: glow != null
-              ? [BoxShadow(color: glow.withValues(alpha: 0.6), blurRadius: 16, spreadRadius: 1)]
-              : null,
-          border: Border.all(color: AppColors.whiteKeyShadow, width: 0.5),
-        ),
-        child: Stack(
-          children: [
-            if (isHint && feedback == KeyFeedback.idle)
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 22),
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: AppColors.target,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            if (label != null)
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    label!,
-                    style: TextStyle(
-                      fontSize: width < 26 ? 8 : 10,
-                      color: AppColors.textMuted,
-                      fontWeight: FontWeight.w600,
+          child: Stack(
+            children: [
+              if (isHint && feedback == KeyFeedback.idle)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 22),
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.target,
+                      shape: BoxShape.circle,
                     ),
                   ),
                 ),
-              ),
-          ],
+              if (label != null)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      label!,
+                      style: TextStyle(
+                        fontSize: width < 26 ? 8 : 10,
+                        color: AppColors.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -259,40 +284,58 @@ class _BlackKey extends StatelessWidget {
         ? Color.alphaBlend(Colors.black.withValues(alpha: 0.35), glow)
         : AppColors.blackKey;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => onDown(),
-      onTapUp: (_) => onUp(),
-      onTapCancel: onUp,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 90),
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [fillTop, fillBottom],
+    return Semantics(
+      label: noteName(midi),
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => onDown(),
+        onTapUp: (_) => onUp(),
+        onTapCancel: onUp,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 90),
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [fillTop, fillBottom],
+            ),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(5),
+            ),
+            boxShadow: glow != null
+                ? [
+                    BoxShadow(
+                      color: glow.withValues(alpha: 0.7),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
           ),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(5)),
-          boxShadow: glow != null
-              ? [BoxShadow(color: glow.withValues(alpha: 0.7), blurRadius: 14, spreadRadius: 1)]
-              : const [BoxShadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))],
-        ),
-        child: isHint && feedback == KeyFeedback.idle
-            ? Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: AppColors.target,
-                    shape: BoxShape.circle,
+          child: isHint && feedback == KeyFeedback.idle
+              ? Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: AppColors.target,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-              )
-            : null,
+                )
+              : null,
+        ),
       ),
     );
   }

@@ -4,9 +4,10 @@ import 'package:audioplayers/audioplayers.dart';
 /// range (C3–C5). Uses a small pool of low-latency players so fast runs and
 /// held chords can sound polyphonically instead of cutting each other off.
 class NotePlayer {
-  /// Sample range — matches the quiz keyboard (C3 to the C two octaves up).
+  /// Sample range — covers the quiz keyboard (C3-C5) and Jam Mode's
+  /// 2.5-octave keyboard, which reaches F5 (77).
   static const int lowMidi = 48;
-  static const int highMidi = 72;
+  static const int highMidi = 77;
 
   static const int _poolSize = 10;
 

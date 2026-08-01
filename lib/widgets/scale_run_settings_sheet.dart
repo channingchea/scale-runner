@@ -42,10 +42,10 @@ class ScaleRunSettingsSheet extends StatefulWidget {
 class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
   bool _chords = true;
   bool _sevenths = false;
-  bool _noteSound = true;
   String _progressionName = commonProgressions.first.name;
   KeyIncrement _increment = KeyIncrement.fifths;
   int _startKeyPc = 0;
+  int _reps = 1;
   bool _loading = true;
 
   @override
@@ -60,15 +60,15 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
     final progression = await widget.settings.runProgression();
     final increment = await widget.settings.runKeyIncrement();
     final startKeyPc = await widget.settings.runStartKeyPc();
-    final noteSound = await widget.settings.noteSoundEnabled();
+    final reps = await widget.settings.runRepsPerKey();
     if (!mounted) return;
     setState(() {
       _chords = chords;
       _sevenths = sevenths;
-      _noteSound = noteSound;
       _progressionName = progression.name;
       _increment = increment;
       _startKeyPc = startKeyPc;
+      _reps = reps;
       _loading = false;
     });
   }
@@ -203,18 +203,36 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
                           ),
                         ),
                         _sectionDivider(),
-                        _sectionHeader('Sound'),
-                        _switchTile(
-                          value: _noteSound,
-                          onChanged: (v) async {
-                            setState(() => _noteSound = v);
-                            await widget.settings.setNoteSoundEnabled(v);
-                            widget.onChanged();
-                          },
-                          title: 'Note sound',
-                          subtitle: 'Play a piano tone when you press a key '
-                              '(turn off if your keyboard has its own sound)',
+                        _sectionHeader('Reps per key'),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 8),
+                          child: SegmentedButton<int>(
+                            segments: const [
+                              ButtonSegment(value: 1, label: Text('1x')),
+                              ButtonSegment(value: 2, label: Text('2x')),
+                              ButtonSegment(value: 4, label: Text('4x')),
+                            ],
+                            selected: {_reps},
+                            onSelectionChanged: (sel) async {
+                              setState(() => _reps = sel.first);
+                              await widget.settings
+                                  .setRunRepsPerKey(sel.first);
+                              widget.onChanged();
+                            },
+                          ),
                         ),
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                          child: Text(
+                            'How many times to repeat each key before moving on',
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12),
+                          ),
+                        ),
+                        _sectionDivider(),
+                        _sectionHeader('Lifetime stats'),
+                        _resetTile(),
                       ],
                     ),
                   ),
@@ -222,6 +240,57 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
               ),
       ),
     );
+  }
+
+  Widget _resetTile() {
+    return ListTile(
+      onTap: _confirmReset,
+      leading: const Icon(Icons.restart_alt, color: AppColors.wrong, size: 22),
+      title: const Text(
+        'Reset weak-point stats',
+        style: TextStyle(
+            color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+      ),
+      subtitle: const Text(
+        'Clear the accuracy you\'ve accumulated by key and mode.',
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+      ),
+    );
+  }
+
+  Future<void> _confirmReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Reset stats?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'This clears your accumulated per-key and per-mode accuracy. '
+          'It can\'t be undone.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Reset',
+                style: TextStyle(color: AppColors.wrong)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await widget.settings.resetRunStats();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Scale Running stats reset')),
+        );
+      }
+    }
   }
 
   Widget _keyChip(int pc) {

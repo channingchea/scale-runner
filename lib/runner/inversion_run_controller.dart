@@ -7,6 +7,8 @@ import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../theory/music_theory.dart';
 import '../theory/inversion_running.dart';
+import 'beat_judge.dart';
+import 'scale_run_controller.dart' show RunTally, RunTier, runTierFor;
 
 /// Lifecycle of the Inversion Running drill. Self-paced uses [idle]/[running];
 /// tempo mode adds a [countingIn] bar before the first beat.
@@ -49,7 +51,10 @@ class InversionRunController extends ChangeNotifier {
     List<ChordFormula>? chords,
     this.tempoMode = false,
     this.beatsPerBar = 4,
+    this.interChordCountInBeats = 2,
     int? seed,
+    this.onBeatMs = 70,
+    this.closeMs = 150,
   })  : _chords = (chords == null || chords.isEmpty) ? _defaultChords : chords,
         _rng = Random(seed) {
     _buildCycle();
@@ -74,15 +79,36 @@ class InversionRunController extends ChangeNotifier {
   /// Count-in length in beats (tempo mode).
   final int beatsPerBar;
 
+  /// Inter-chord count-in length in beats (tempo mode only), played at each
+  /// cycle boundary so the next chord is visible before its first judged
+  /// beat. Deliberately shorter than [beatsPerBar] so a full bar of pause
+  /// between every chord doesn't kill the drill's continuous feel.
+  final int interChordCountInBeats;
+
   final Random _rng;
 
-  /// Timing thresholds — identical to MetronomeController / ScaleRunController.
-  static const int onBeatMs = 70;
-  static const int closeMs = 150;
+  /// Timing thresholds (ms), injected from the global timing-difficulty
+  /// setting — identical to MetronomeController / ScaleRunController.
+  final int onBeatMs;
+  final int closeMs;
+
+  /// The shared timing engine: all press-vs-beat math (latency, wrap, early
+  /// detection, verdicts) lives in [BeatJudge], identical across modes.
+  late final BeatJudge _judge = BeatJudge(
+    msSinceBeat: () => msSinceBeat(),
+    beatPeriodMs: () => beatPeriodMs(),
+    latencyMs: () => inputLatencyMs,
+    onBeatMs: onBeatMs,
+    closeMs: closeMs,
+  );
 
   // ---- Clock wiring (set by the screen, faked in tests) ------------------
   int Function() msSinceBeat = () => 0;
   int Function() beatPeriodMs = () => 600;
+
+  /// Input-latency correction (ms) for a BLE MIDI keyboard.
+  /// Set by the screen when a BLE keyboard is driving the drill.
+  int inputLatencyMs = 0;
 
   /// Fired on every key press before judging (e.g. metronome flash).
   void Function(int midiNote)? onAnyPress;
@@ -92,9 +118,15 @@ class InversionRunController extends ChangeNotifier {
   int _stepIndex = 0;
   InversionPhase _phase = InversionPhase.idle;
   int _countInRemaining = 0;
+  int _countInTotal = 0;
 
   /// Per-step verdict for the current cycle (tempo mode); null = not yet judged.
   List<StepResult?> _results = const [];
+  int? _graceStepIndex;
+
+  /// An early completion locked in just before the settle tick: its verdict,
+  /// applied at the tick even if the voicing was released (staccato).
+  StepResult? _pendingResult;
 
   final Set<int> _held = {};
   final Set<int> _wrongFlash = {};
@@ -108,14 +140,35 @@ class InversionRunController extends ChangeNotifier {
   int streak = 0; // consecutive correct voicings
   int bestStreak = 0;
 
+  /// Per-chord-type accuracy tally, accumulated across the session. Bucketed
+  /// by chord name ("Major", "Minor", ...) rather than root, since the root
+  /// is randomized every cycle and the chord type is the one selectable
+  /// dimension in v1.
+  final Map<String, RunTally> chordScores = {};
+
+  /// Fired once when a running/counting-in session ends (via [stop]), so the
+  /// screen can snapshot stats, persist lifetime aggregates, and show a
+  /// summary. Not fired when [stop] is a no-op on an already-idle controller.
+  void Function()? onSessionEnd;
+
   // ---- Public state for the UI -------------------------------------------
   InversionPhase get phase => _phase;
   bool get running => _phase == InversionPhase.running;
   bool get countingIn => _phase == InversionPhase.countingIn;
 
-  /// Count-in beat to display (1..beatsPerBar), 0 when not counting in.
-  int get countInBeat =>
-      _phase == InversionPhase.countingIn ? beatsPerBar - _countInRemaining : 0;
+  /// Count-in beat to display (1..the active count-in's length — either
+  /// [beatsPerBar] at session start or [interChordCountInBeats] at a
+  /// cycle boundary), 0 when not counting in.
+  int get countInBeat => _phase == InversionPhase.countingIn
+      ? _countInTotal - _countInRemaining
+      : 0;
+
+  /// Beats remaining before the downbeat (countdown for the numbers
+  /// display): the active count-in's length down to 1, reaching 1 on the
+  /// last count-in beat. 0 when not counting in.
+  int get beatsUntilDownbeat => _phase == InversionPhase.countingIn
+      ? _countInTotal - (countInBeat == 0 ? 1 : countInBeat) + 1
+      : 0;
 
   InversionCycle get cycle => _cycle;
   InversionStep get currentStep => _cycle.steps[_stepIndex];
@@ -158,12 +211,56 @@ class InversionRunController extends ChangeNotifier {
     return bassPc == currentStep.bassPc;
   }
 
+  /// Overall session accuracy (0.0–1.0): voicings landed correctly out of
+  /// voicings landed + wrong-pitch presses. 0 for an empty session.
+  double get accuracy {
+    final total = stepsCompleted + notesWrong;
+    return total == 0 ? 0 : stepsCompleted / total;
+  }
+
+  /// Performance tier for the current overall accuracy. Same scale as
+  /// Scale Running / Jam Mode.
+  RunTier get tier => runTierFor(accuracy);
+
+  /// The lowest-accuracy attempted chord type this session, or null if
+  /// nothing has been attempted yet. Tie-break toward the most attempts.
+  MapEntry<String, RunTally>? get weakestChord => _weakest(chordScores);
+
+  MapEntry<String, RunTally>? _weakest(Map<String, RunTally> scores) {
+    MapEntry<String, RunTally>? worst;
+    for (final e in scores.entries) {
+      if (e.value.attempts == 0) continue;
+      if (worst == null ||
+          e.value.accuracy < worst.value.accuracy ||
+          (e.value.accuracy == worst.value.accuracy &&
+              e.value.attempts > worst.value.attempts)) {
+        worst = e;
+      }
+    }
+    return worst;
+  }
+
+  /// Snapshot of the per-chord-type tally as `chord name → (attempts,
+  /// correct)` records, for merging into persisted lifetime aggregates on stop.
+  Map<String, (int, int)> get chordSnapshot => {
+        for (final e in chordScores.entries)
+          e.key: (e.value.attempts, e.value.correct),
+      };
+
+  /// Record one judged event (a landed voicing or a wrong-pitch press) against
+  /// the current chord type's tally.
+  void _tally(bool ok) {
+    (chordScores[_cycle.chord.name] ??= RunTally()).record(ok);
+  }
+
   // ---- Start / stop ------------------------------------------------------
   void start() {
     _buildCycle();
     _resetRoundState();
+    resetScores();
     if (tempoMode) {
       _phase = InversionPhase.countingIn;
+      _countInTotal = beatsPerBar;
       _countInRemaining = beatsPerBar;
     } else {
       _phase = InversionPhase.running;
@@ -172,15 +269,30 @@ class InversionRunController extends ChangeNotifier {
   }
 
   void stop() {
+    final wasActive = _phase != InversionPhase.idle;
     _phase = InversionPhase.idle;
     _clearFlashes();
     notifyListeners();
+    if (wasActive) onSessionEnd?.call();
+  }
+
+  /// Clear all accumulated session scores. Called on each fresh [start]; the
+  /// lifetime aggregates live in prefs, not here.
+  void resetScores() {
+    stepsCompleted = 0;
+    cyclesCompleted = 0;
+    notesWrong = 0;
+    streak = 0;
+    bestStreak = 0;
+    chordScores.clear();
   }
 
   void _resetRoundState() {
     _stepIndex = 0;
     _held.clear();
     _results = List.filled(_cycle.length, null);
+    _graceStepIndex = null;
+    _pendingResult = null;
     _clearFlashes();
   }
 
@@ -214,30 +326,34 @@ class InversionRunController extends ChangeNotifier {
     }
   }
 
-  /// Tempo mode: judge whether the current voicing was held in time, record the
-  /// verdict, then advance (rolling over at the end of the cycle).
+  /// Tempo mode: settle the current step at its tick. A verdict locked in by
+  /// an early completion ([_pendingResult]) wins — it carries the strike's
+  /// real timing and survives a release before the tick. Otherwise a voicing
+  /// held through the tick is on-beat by definition (no latency math here:
+  /// the tick measures state, not a press event — subtracting input latency
+  /// at the tick just penalized BLE players a constant offset).
   void _settleAndAdvance() {
-    final period = beatPeriodMs();
-    final since = msSinceBeat().clamp(0, period);
-    final offBy = since <= period ~/ 2 ? since : period - since;
-
     final StepResult verdict;
-    if (currentVoicingHeld && offBy <= onBeatMs) {
+    if (_pendingResult != null) {
+      verdict = _pendingResult!;
+      _pendingResult = null;
+    } else if (currentVoicingHeld) {
       verdict = StepResult.onBeat;
-    } else if (currentVoicingHeld && offBy <= closeMs) {
-      verdict = StepResult.close;
     } else {
       verdict = StepResult.missed;
     }
 
     if (_stepIndex < _results.length) _results[_stepIndex] = verdict;
+    _tally(verdict != StepResult.missed);
 
     if (verdict == StepResult.missed) {
       streak = 0;
+      _graceStepIndex = _stepIndex;
     } else {
       stepsCompleted++;
       streak++;
       if (streak > bestStreak) bestStreak = streak;
+      _graceStepIndex = null;
     }
     _advanceStep();
   }
@@ -258,9 +374,10 @@ class InversionRunController extends ChangeNotifier {
 
   void pressKey(int midiNote) {
     onAnyPress?.call(midiNote);
+    final wasHeld = currentVoicingHeld;
     _held.add(midiNote);
     if (_phase == InversionPhase.running) {
-      _judgePress(midiNote);
+      _judgePress(midiNote, wasHeld);
     }
     notifyListeners();
   }
@@ -271,7 +388,7 @@ class InversionRunController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _judgePress(int midiNote) {
+  void _judgePress(int midiNote, bool wasHeld) {
     final pc = pitchClassOf(midiNote);
     final chordPcs = currentStep.pitchClasses;
 
@@ -280,6 +397,7 @@ class InversionRunController extends ChangeNotifier {
     if (!chordPcs.contains(pc)) {
       notesWrong++;
       streak = 0;
+      _tally(false);
       _flash(_wrongFlash, midiNote);
       return;
     }
@@ -287,9 +405,46 @@ class InversionRunController extends ChangeNotifier {
     _flash(_correctFlash, midiNote);
     // Self-paced: a complete voicing advances. Tempo mode advances on the beat
     // instead, so a press only flashes (and registers the hit via onAnyPress).
-    if (!tempoMode && currentVoicingHeld) {
-      _advanceCorrect();
+    if (!tempoMode) {
+      if (currentVoicingHeld) {
+        _advanceCorrect();
+      }
+    } else {
+      if (!wasHeld && currentVoicingHeld) {
+        // The voicing just completed: judge the completing press with the
+        // shared engine. A wrapped press (struck before the latest tick,
+        // delivered after it — BLE lag) is just as rescuable as a late one.
+        final t = _judge.judgePress();
+        if (_graceStepIndex != null &&
+            !t.early &&
+            _judge.withinGrace(t.offBy) &&
+            _results[_graceStepIndex!] == StepResult.missed) {
+          // Late completion rescuing the step that just settled missed.
+          _rescueGraceStep(midiNote, t.offBy);
+        } else if (t.early && _judge.withinGrace(t.offBy)) {
+          // Early completion just before the coming settle tick: lock in its
+          // verdict now so a release before the tick (staccato) still scores.
+          _pendingResult = _judge.verdictFor(t.offBy) == BeatVerdict.onBeat
+              ? StepResult.onBeat
+              : StepResult.close;
+        }
+      }
     }
+  }
+
+  void _rescueGraceStep(int midiNote, int offBy) {
+    final step = _graceStepIndex!;
+    final StepResult verdict = _judge.verdictFor(offBy) == BeatVerdict.onBeat
+        ? StepResult.onBeat
+        : StepResult.close;
+    _results[step] = verdict;
+    
+    streak++;
+    if (streak > bestStreak) bestStreak = streak;
+    stepsCompleted++;
+    chordScores[_cycle.chord.name]?.correct += 1;
+    _graceStepIndex = null;
+    _flash(_correctFlash, midiNote);
   }
 
   /// Self-paced advance: count the voicing as correct, then move on.
@@ -297,10 +452,14 @@ class InversionRunController extends ChangeNotifier {
     stepsCompleted++;
     streak++;
     if (streak > bestStreak) bestStreak = streak;
+    _tally(true);
     _advanceStep();
   }
 
   /// Move to the next step; roll over to a fresh random round at cycle end.
+  /// Tempo mode drops into a short inter-chord count-in at the boundary so
+  /// the new chord is on screen before its first judged beat; self-paced
+  /// rolls over instantly, unchanged.
   void _advanceStep() {
     _stepIndex++;
     if (_stepIndex >= _cycle.length) {
@@ -309,6 +468,11 @@ class InversionRunController extends ChangeNotifier {
       _stepIndex = 0;
       _results = List.filled(_cycle.length, null);
       _held.clear(); // require the next round's root to be re-struck
+      if (tempoMode) {
+        _phase = InversionPhase.countingIn;
+        _countInTotal = interChordCountInBeats;
+        _countInRemaining = interChordCountInBeats;
+      }
     }
   }
 

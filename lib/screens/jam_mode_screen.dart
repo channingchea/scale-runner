@@ -11,38 +11,46 @@ import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
-import '../quiz/quiz_controller.dart' show QuizController;
 import '../quiz/quiz_settings.dart';
 import '../runner/beat_debug.dart';
-import '../runner/scale_run_controller.dart';
+import '../runner/jam_mode_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../widgets/jam_mode_settings_sheet.dart';
+import '../widgets/jam_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
-import '../widgets/rotate_hint_banner.dart';
 import '../widgets/reminder_prompt_sheet.dart';
-import '../widgets/scale_run_session_summary_sheet.dart';
-import '../widgets/scale_run_settings_sheet.dart';
+import '../widgets/rotate_hint_banner.dart';
 import '../widgets/streak_sheets.dart';
 
-/// The Scale Running drill: a continuous, tempo-driven walk through keys.
-/// Hold the diatonic chord in one hand, run its mode in the other — one note
-/// per beat, judged against the metronome's clock.
-class ScaleRunScreen extends StatefulWidget {
-  const ScaleRunScreen({super.key, required this.midi});
+/// Jam Mode: a beat-locked diatonic comping drill in one fixed key. The
+/// metronome runs continuously; one diatonic chord is prompted per bar and
+/// struck on the downbeat. A one-bar count-in arms the drill; stopping the
+/// metronome ends the session. Mistakes flash red but the drill never rewinds.
+class JamModeScreen extends StatefulWidget {
+  const JamModeScreen({super.key, required this.midi});
 
   final MidiService midi;
 
   @override
-  State<ScaleRunScreen> createState() => _ScaleRunScreenState();
+  State<JamModeScreen> createState() => _JamModeScreenState();
 }
 
-class _ScaleRunScreenState extends State<ScaleRunScreen> {
-  ScaleRunController? _controller;
+class _JamModeScreenState extends State<JamModeScreen> {
+  JamModeController? _controller;
   QuizSettings? _settings;
   MetronomeController? _metronome;
   bool _noteSound = true;
+  bool _showDots = true;
+  bool _showFormula = true;
+  bool _countInNumbers = true;
   final NotePlayer _notes = NotePlayer();
+
+  /// This mode widens the keyboard to 2.5 octaves (C3–F5, MIDI 48–77) so a full
+  /// maj9 voicing fits in one span. Other modes keep the global 2-octave anchor.
+  static const int _keyboardLowMidi = 48; // C3
+  static const double _keyboardOctaves = 2.5;
 
   bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
@@ -59,11 +67,11 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
     );
-    // Stopping the metronome (e.g. collapsing its bar) pauses the drill too —
-    // the drill cannot run without its clock.
+    // Jam Mode is always tempo-driven: collapsing the metronome bar stops the
+    // clock, which must stop the drill (and surface the session summary).
     metronome.addListener(() {
       final c = _controller;
-      if (!metronome.running && c != null && c.phase != RunPhase.idle) {
+      if (!metronome.running && c != null && c.phase != JamPhase.idle) {
         c.stop();
       }
     });
@@ -72,30 +80,30 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     await _rebuildController();
   }
 
-  /// (Re)build the controller from the current settings.
   Future<void> _rebuildController() async {
     final settings = _settings;
     final metronome = _metronome;
     if (settings == null || metronome == null) return;
     metronome.stop();
     _noteSound = await settings.noteSoundEnabled();
+    _showDots = await settings.jamShowDots();
+    _showFormula = await settings.jamShowFormula();
+    _countInNumbers = await settings.jamCountInNumbers();
+    final keyPc = await settings.jamKeyPc();
+    final families = await settings.jamFamilies();
+    final sessionBars = await settings.jamSessionBars();
+    final freestyle = await settings.jamFreestyle();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
-    final next = ScaleRunController(
-      chordsEnabled: await settings.runChordsEnabled(),
-      progression: await settings.runProgression(),
-      increment: await settings.runKeyIncrement(),
-      sevenths: await settings.runSevenths(),
-      startKeyPc: await settings.runStartKeyPc(),
-      repsPerKey: await settings.runRepsPerKey(),
+    final next = JamModeController(
+      keyPc: keyPc,
+      families: families,
+      sessionBars: sessionBars,
+      freestyle: freestyle,
       onBeatMs: difficulty.onBeatMs,
       closeMs: difficulty.closeMs,
     );
-    // Correct for input latency: a saved per-device calibration always wins;
-    // otherwise fall back to the BLE default only when the device currently
-    // reports as BLE. USB and on-screen taps stay at 0. See
-    // resolveInputLatencyMs for why we don't gate purely on isBleConnected.
     final latency = await resolveInputLatencyMs(widget.midi, settings);
     next
       ..msSinceBeat = (() => metronome.msSinceLastTick)
@@ -125,8 +133,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     final c = _controller;
     final m = _metronome;
     if (c == null || m == null) return;
-    if (c.phase == RunPhase.idle) {
-      c.start(); // start() resets session scores
+    if (c.phase == JamPhase.idle) {
+      c.resetScores();
+      c.start();
       m.start();
     } else {
       c.stop(); // fires onSessionEnd → _endSession (snapshot + summary)
@@ -134,33 +143,32 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     }
   }
 
-  /// A session has ended (manual stop, metronome collapse, or auto-end at 12
-  /// keys): snapshot its stats, fold them into the persisted lifetime
-  /// aggregates, and show the summary. Guarded so it runs once and only when
-  /// something was actually judged.
+  /// A session has ended: snapshot its stats, fold them into the persisted
+  /// lifetime aggregates, and show the summary. Guarded so it runs once and only
+  /// when at least one bar was judged.
   bool _endingSession = false;
-  Future<void> _endSession(ScaleRunController c) async {
-    final stats = RunSessionStats.from(c);
-    if (_endingSession || !stats.hasData) return;
+  Future<void> _endSession(JamModeController c) async {
+    if (_endingSession || c.barsJudged == 0) return;
     _endingSession = true;
-    // The drill may have auto-ended after the 12th key while the metronome is
-    // still ticking — stop it so the clock and drill end together. (The collapse
-    // listener won't re-fire onSessionEnd: the controller is already idle.)
+    // The drill may have auto-ended after the last chord while the metronome is
+    // still ticking — stop it so the clock and drill end together.
     _metronome?.stop();
+    final stats = JamSessionStats.from(c);
     final settings = _settings;
     if (settings != null) {
-      await settings.mergeRunStats(c.keySnapshot, c.modeSnapshot);
-      unawaited(SocialService.instance.recordWeeklySessionFrom(c.keySnapshot));
+      await settings.mergeJamStats(c.qualitySnapshot, c.degreeSnapshot);
+      unawaited(
+          SocialService.instance.recordWeeklySessionFrom(c.qualitySnapshot));
       unawaited(SocialService.instance.recordModeScores());
     }
     final streakUpdate = await StreakService.instance.recordPractice();
     if (mounted) {
-      await ScaleRunSessionSummarySheet.show(context, stats);
+      await JamSessionSummarySheet.show(context, stats);
     }
     if (streakUpdate.milestone case final m? when mounted) {
       await StreakMilestoneSheet.show(context, m);
     }
-    await _maybeShowPostTrialPaywall(settings, QuizSettings.modeScaleRun);
+    await _maybeShowPostTrialPaywall(settings, QuizSettings.modeJam);
     if (mounted) await ReminderPromptSheet.maybeShow(context);
     _endingSession = false;
   }
@@ -182,7 +190,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   Future<void> _openSettings() async {
     final settings = _settings;
     if (settings == null) return;
-    await ScaleRunSettingsSheet.show(
+    await JamModeSettingsSheet.show(
       context,
       settings: settings,
       onChanged: _rebuildController,
@@ -203,20 +211,16 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    // bodyHeight/compact/keyboardHeight only depend on MediaQuery, so they're
-    // computed once here (this method already resubscribes to MediaQuery on
-    // its own) rather than inside the per-beat builders below. The prompt and
-    // keyboard are each wrapped in their own ListenableBuilder — instead of
-    // one whole-body AnimatedBuilder — so a key-press glow only rebuilds the
-    // keyboard's widgets, not the prompt's text/layout, and vice versa.
+    // See ScaleRunScreen.build for why this is split: prompt and keyboard
+    // each get their own ListenableBuilder instead of sharing one whole-body
+    // AnimatedBuilder, so a beat/key-press update doesn't force the other
+    // half to rebuild its widgets too.
     return Scaffold(
       body: controller == null
           ? const Center(child: CircularProgressIndicator())
           : Builder(
               builder: (context) {
                 final bodyHeight = MediaQuery.of(context).size.height;
-                // Compact mode: landscape PHONES only. Portrait phones and
-                // tablets are tall enough for the regular layout.
                 final compact = _isMobile && bodyHeight < 500;
                 final keyboardHeight = compact
                     ? (bodyHeight * 0.40).clamp(120.0, 240.0)
@@ -282,7 +286,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
             IconButton(
               icon: const Icon(Icons.settings),
               color: AppColors.textPrimary,
-              tooltip: 'Scale Running settings',
+              tooltip: 'Jam Mode settings',
               onPressed: _openSettings,
             ),
           ],
@@ -291,20 +295,17 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     );
   }
 
-  Widget _buildPrompt(ScaleRunController c, bool compact) {
-    // What to play (labels) and how it's going (dots / chord / controls).
-    // Regular layout stacks both groups; compact (landscape-phone) mode puts
-    // them side by side so the short viewport isn't asked to fit the full
-    // vertical stack.
+  Widget _buildPrompt(JamModeController c, bool compact) {
+    final active = c.running || c.countingIn;
     final info = <Widget>[
       Text(
-        c.chordsEnabled
-            ? 'Hold the chord, run the mode — one note per beat'
-            : 'Run the scale — one note per beat',
+        c.keyLabel,
         textAlign: TextAlign.center,
         style: TextStyle(
           color: AppColors.textSecondary,
           fontSize: compact ? 12 : 14,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
         ),
       ),
       SizedBox(height: compact ? 6 : 12),
@@ -314,7 +315,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
           shaderCallback: (bounds) =>
               AppColors.accentGradient.createShader(bounds),
           child: Text(
-            c.keyLabel,
+            c.running ? c.promptLabel : 'Jam Mode',
             style: TextStyle(
               fontSize: compact ? 26 : (_isMobile ? 32 : 36),
               fontWeight: FontWeight.w800,
@@ -324,50 +325,45 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
           ),
         ),
       ),
-      if (c.repsPerKeyCount > 1) ...[
+      if (c.running && c.freestyle && c.freestyleForbiddenLabel.isNotEmpty) ...[
         SizedBox(height: compact ? 2 : 4),
         Text(
-          'rep ${c.repIndex}/${c.repsPerKeyCount}',
-          style: const TextStyle(
+          c.freestyleForbiddenLabel,
+          style: TextStyle(
             color: AppColors.textSecondary,
-            fontSize: 12,
+            fontSize: compact ? 12 : 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ] else if (_showFormula &&
+          c.running &&
+          !c.freestyle &&
+          c.currentChord != null) ...[
+        SizedBox(height: compact ? 2 : 4),
+        Text(
+          c.currentChord!.formula,
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: compact ? 12 : 13,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.5,
           ),
         ),
       ],
       SizedBox(height: compact ? 4 : 6),
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          c.chordsEnabled
-              ? '${c.currentStep.chordLabel}  ·  '
-                    'run ${c.currentStep.modeLabel}'
-              : c.currentStep.modeLabel,
-          style: TextStyle(
-            fontSize: compact ? 15 : 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-      if (c.chordsEnabled) ...[
-        const SizedBox(height: 4),
-        Text(
-          'Bar ${c.stepIndex + 1} of ${c.stepCount}'
-          '  ·  ${c.progression.name}',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-        ),
+      _matchedIndicator(c),
+      if (c.freestyle && c.running) ...[
+        SizedBox(height: compact ? 4 : 6),
+        _liveChordPill(c),
       ],
     ];
     final status = <Widget>[
-      _buildBeatDots(c),
+      _countInNumbers
+          ? _buildCountInNumber(c, active, compact)
+          : _buildBeatDots(c, active),
       SizedBox(height: compact ? 10 : 14),
-      if (c.chordsEnabled) ...[
-        _buildChordIndicator(c),
-        SizedBox(height: compact ? 10 : 14),
-      ],
-      _buildRunControl(c, compact),
+      _buildRunControl(c),
     ];
     final child = compact
         ? Row(
@@ -402,143 +398,194 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     );
   }
 
-  /// The 8 beats of the bar: filled by result color as the run progresses.
-  Widget _buildBeatDots(ScaleRunController c) {
+  /// Status pill. Right after a downbeat it shows the verdict (Nailed it / Close
+  /// / Missed) so each hit is confirmed; otherwise it tracks whether the chord
+  /// is currently built (green) as you prep it during the count-in.
+  Widget _matchedIndicator(JamModeController c) {
+    final verdict = c.active ? c.lastVerdict : null;
+    if (verdict != null) {
+      final (label, color, icon) = switch (verdict) {
+        JamResult.onBeat => (
+          'Nailed it!',
+          AppColors.correct,
+          Icons.check_circle,
+        ),
+        JamResult.close => (
+          'Close — a bit off',
+          AppColors.accent2,
+          Icons.timelapse,
+        ),
+        JamResult.missed => ('Missed', AppColors.wrong, Icons.cancel),
+      };
+      // Freestyle has no fixed prompt on screen, so name the chord that was
+      // actually judged; Prompted already shows it continuously above.
+      final judged = c.freestyle ? c.lastJudgedChord : null;
+      final full = judged != null ? '$label — ${judged.name}' : label;
+      return _pill(full, color, icon, filled: true);
+    }
+    final matched = c.active && c.currentChordMatched;
+    final label = c.active
+        ? (matched ? 'Chord ready' : 'Build the chord')
+        : 'Press Start';
+    return _pill(
+      label,
+      matched ? AppColors.correct : AppColors.textSecondary,
+      matched ? Icons.check_circle : Icons.radio_button_unchecked,
+      filled: matched,
+    );
+  }
+
+  Widget _pill(
+    String label,
+    Color color,
+    IconData icon, {
+    required bool filled,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: filled ? color.withValues(alpha: 0.18) : AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: filled ? color : AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: filled ? color : AppColors.textMuted),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: filled ? color : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Freestyle only: live readout of what's currently recognized while
+  /// building, so there's feedback before the downbeat. Amber warns the
+  /// chord would score a repeat; red warns its family is switched off.
+  Widget _liveChordPill(JamModeController c) {
+    final match = c.liveChordMatch;
+    if (match == null) {
+      return _pill('Play any chord', AppColors.textSecondary,
+          Icons.radio_button_unchecked, filled: false);
+    }
+    if (!match.enabled) {
+      return _pill('${match.chord.name} — family off', AppColors.wrong,
+          Icons.block, filled: true);
+    }
+    if (c.liveChordIsRepeat) {
+      return _pill('${match.chord.name} — repeat', AppColors.accent2,
+          Icons.warning_amber_rounded, filled: true);
+    }
+    return _pill(
+        match.chord.name, AppColors.correct, Icons.check_circle, filled: true);
+  }
+
+  /// A big decrementing count-in number (4 → 3 → 2 → 1) toward the strike, then
+  /// "GO" on the strike/grace beat. Clearer than dots for signalling exactly
+  /// when to play the chord.
+  Widget _buildCountInNumber(JamModeController c, bool active, bool compact) {
+    final size = compact ? 36.0 : 48.0;
+    final strike = c.judging;
+    final label = !active ? '–' : (strike ? 'GO' : '${c.beatsUntilStrike}');
+    final color = strike ? AppColors.accent : AppColors.accent2;
+    return SizedBox(
+      height: size + 6,
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 90),
+          transitionBuilder: (child, anim) =>
+              ScaleTransition(scale: anim, child: child),
+          child: Text(
+            label,
+            key: ValueKey(label),
+            style: TextStyle(
+              fontSize: strike ? size * 0.62 : size,
+              fontWeight: FontWeight.w800,
+              color: active ? color : AppColors.textMuted,
+              height: 1.0,
+              fontFeatures: tabularFigures,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One dot per beat of the bar. The strike lands on the DOWNBEAT (beat 1 —
+  /// the first, larger dot); the remaining dots fill as the count-in beats
+  /// pass and the current beat is ringed, so you can feel the next downbeat
+  /// coming.
+  Widget _buildBeatDots(JamModeController c, bool active) {
+    final count = c.beatsPerBar;
+    final current = active ? c.countInBeat : 0; // 1..count
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        for (var b = 0; b < 8; b++) ...[
-          if (b > 0) const SizedBox(width: 8),
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
           AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            width: 16,
-            height: 16,
+            width: i == 0 ? 16 : 12,
+            height: i == 0 ? 16 : 12,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _dotColor(c.resultAt(b)),
+              color: active && i < current
+                  ? (i == 0 ? AppColors.accent : AppColors.accent2)
+                  : Colors.transparent,
               border: Border.all(
-                color: c.running && b == c.beatIndex
+                color: active && i == current - 1
                     ? AppColors.accent
                     : AppColors.border,
-                width: c.running && b == c.beatIndex ? 2 : 1,
+                width: active && i == current - 1 ? 2 : 1,
               ),
             ),
-            child: _dotIcon(c.resultAt(b)),
           ),
         ],
       ],
     );
   }
 
-  static Color _dotColor(NoteResult? r) => switch (r) {
-    NoteResult.onBeat => AppColors.correct,
-    NoteResult.close => AppColors.accent2,
-    NoteResult.offTime || NoteResult.missed => AppColors.wrong,
-    null => Colors.transparent,
-  };
-
-  /// A glyph inside the dot so a result never reads by color alone
-  /// (colorblind-safe): check = on-beat, dash = close, x = missed/off-time.
-  static Widget? _dotIcon(NoteResult? r) => switch (r) {
-    NoteResult.onBeat => const Icon(Icons.check, size: 11, color: AppColors.bg),
-    NoteResult.close => const Icon(Icons.remove, size: 11, color: AppColors.bg),
-    NoteResult.offTime ||
-    NoteResult.missed => const Icon(Icons.close, size: 11, color: AppColors.bg),
-    null => null,
-  };
-
-  /// Confirms the held chord registered — needed because the 2-octave
-  /// keyboard means chord and run can overlap in pitch.
-  Widget _buildChordIndicator(ScaleRunController c) {
-    final held = c.chordHeldCorrectly && c.running;
-    final missed = c.chordMissedThisBar;
-    final color = missed
-        ? AppColors.wrong
-        : held
-        ? AppColors.correct
-        : AppColors.textMuted;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color),
-      ),
-      child: Row(
+  Widget _buildRunControl(JamModeController c) {
+    if (c.phase == JamPhase.idle) {
+      return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            held ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: color,
-            size: 16,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            missed
-                ? 'Chord missed'
-                : held
-                ? 'Chord held'
-                : 'Hold the chord',
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
+          FilledButton.icon(
+            onPressed: _toggleRun,
+            icon: const Icon(Icons.play_arrow),
+            label: Text('Start • ${c.sessionBars} chords'),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Start button / count-in number / stop control, by phase.
-  Widget _buildRunControl(ScaleRunController c, bool compact) {
-    switch (c.phase) {
-      case RunPhase.idle:
-        return FilledButton.icon(
-          onPressed: _toggleRun,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Start'),
-        );
-      case RunPhase.countingIn:
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${c.beatsUntilDownbeat}',
-              style: TextStyle(
-                fontSize: compact ? 30 : 40,
-                fontWeight: FontWeight.w800,
-                color: AppColors.accent2,
-                fontFeatures: tabularFigures,
-              ),
-            ),
-            const Text(
-              'Count-in…',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-          ],
-        );
-      case RunPhase.running:
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _stat('Streak', '${c.streak}', AppColors.accent2),
-            const SizedBox(width: 10),
-            _stat('Best', '${c.bestStreak}', AppColors.target),
-            const SizedBox(width: 14),
-            OutlinedButton.icon(
-              onPressed: _toggleRun,
-              icon: const Icon(Icons.stop, size: 18),
-              label: const Text('Stop'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.textPrimary,
-                side: const BorderSide(color: AppColors.border),
-              ),
-            ),
-          ],
-        );
+      );
     }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _stat('Acc', '${(c.accuracy * 100).round()}%', AppColors.correct),
+        const SizedBox(width: 10),
+        _stat('Streak', '${c.streak}', AppColors.accent2),
+        const SizedBox(width: 10),
+        _stat('Chord', '${c.barsCompleted}/${c.sessionBars}', AppColors.target),
+        const SizedBox(width: 14),
+        OutlinedButton.icon(
+          onPressed: _toggleRun,
+          icon: const Icon(Icons.stop, size: 18),
+          label: const Text('Stop'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.textPrimary,
+            side: const BorderSide(color: AppColors.border),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _stat(String label, String value, Color color) {
@@ -562,7 +609,8 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     );
   }
 
-  Widget _buildKeyboard(ScaleRunController c, double height) {
+  Widget _buildKeyboard(JamModeController c, double height) {
+    final active = c.running || c.countingIn;
     return SafeArea(
       top: false,
       child: Padding(
@@ -571,10 +619,12 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
           height: height,
           child: RepaintBoundary(
             child: PianoKeyboard(
-              lowMidi: QuizController.keyboardLowMidi,
-              octaves: QuizController.keyboardOctaves.toDouble(),
+              lowMidi: _keyboardLowMidi,
+              octaves: _keyboardOctaves,
               feedbackFor: c.feedbackFor,
-              isTargetHint: c.isTargetHint,
+              isTargetHint: (_showDots && active && c.running)
+                  ? c.isTargetHint
+                  : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
             ),
