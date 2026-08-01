@@ -1,0 +1,39 @@
+# Scale Runner invite host — scalerunner.c1gnus.com
+#
+# Serves three things:
+#   /.well-known/apple-app-site-association  → iOS Universal Links
+#   /.well-known/assetlinks.json             → Android App Links
+#   /invite/<code>                           → invite landing page
+#
+# Anything else falls through to a redirect to c1gnus.com.
+
+Options -Indexes
+DirectoryIndex index.html
+
+# --- Association files ------------------------------------------------------
+# iOS fetches the AASA over HTTPS and rejects it if it redirects or comes back
+# as the wrong type. The file deliberately has no extension, so set it here.
+<Files "apple-app-site-association">
+  ForceType application/json
+</Files>
+
+<IfModule mod_headers.c>
+  <FilesMatch "^(apple-app-site-association|assetlinks\.json)$">
+    Header set Cache-Control "public, max-age=3600"
+    Header set Access-Control-Allow-Origin "*"
+  </FilesMatch>
+</IfModule>
+
+RewriteEngine On
+
+# Never rewrite or redirect the association files — Apple and Google both
+# treat any redirect on these paths as a verification failure.
+RewriteRule ^\.well-known/ - [L]
+
+# Force HTTPS for everything else.
+RewriteCond %{HTTPS} !=on
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# /invite/<code> is served by one static page that reads the code out of the
+# URL, so no per-invite file is ever created.
+RewriteRule ^invite/[A-Za-z0-9]+/?$ /invite/index.html [L]

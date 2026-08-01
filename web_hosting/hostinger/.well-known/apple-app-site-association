@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["9LTD86C5X7.com.scalerunner.app"],
+        "components": [{ "/": "/invite/*" }]
+      }
+    ]
+  }
+}

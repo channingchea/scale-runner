@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scale Runner — Friend invite</title>
+<style>
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         background:#0F141B; color:#E8ECF1; display:flex; min-height:100vh;
+         align-items:center; justify-content:center; text-align:center; }
+  .card { max-width:340px; padding:40px 28px; }
+  h1 { font-size:22px; margin:16px 0 8px;
+       background:linear-gradient(135deg,#36D6C3,#1FA396);
+       -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  p { color:#94A1B2; font-size:14px; line-height:1.5; }
+  .emoji { font-size:52px; }
+  a.btn { display:block; margin-top:14px; padding:14px 20px; border-radius:10px;
+          background:#36D6C3; color:#06251F; font-weight:700; text-decoration:none; }
+  a.btn.alt { background:#1F2835; color:#E8ECF1; border:1px solid #2C3645; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="emoji">🎹</div>
+  <h1>You've been invited!</h1>
+  <p>A friend wants to be practice buddies on Scale Runner —
+     the MIDI piano practice app.</p>
+  <a class="btn" id="open" href="#">Open in the app</a>
+  <a class="btn alt" id="store" href="https://testflight.apple.com/join/vMhnCACs">Get Scale Runner</a>
+  <p style="font-size:12px;color:#5B6878">After installing, tap your invite
+     link again to add your friend.</p>
+</div>
+<script>
+  // The invite code comes from the URL path (/invite/<code>) — .htaccess
+  // rewrites every code to this one page, so there is nothing to generate.
+  var code = (location.pathname.split('/').filter(Boolean).pop() || '');
+  var appUrl = 'scalerunner://invite/' + encodeURIComponent(code);
+  document.getElementById('open').href = appUrl;
+
+  // Beta links while the app is TestFlight / Firebase-only. Swap both to the
+  // store URLs at public launch, alongside kPubliclyLaunched in
+  // lib/widgets/streak_sheets.dart.
+  if (/android/i.test(navigator.userAgent)) {
+    document.getElementById('store').href =
+      'https://appdistribution.firebase.google.com/i/a3847e100f0ac630';
+  }
+
+  // Try the app once via the custom scheme; a no-op when it isn't installed.
+  if (code) {
+    setTimeout(function () { window.location.href = appUrl; }, 400);
+  }
+</script>
+</body>
+</html>

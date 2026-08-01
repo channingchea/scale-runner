@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.scalerunner.app",
+      "sha256_cert_fingerprints": [
+        "6A:F2:22:0C:A7:E5:42:E9:16:AB:16:A2:76:F1:8C:2D:A3:8B:2A:20:A1:DB:74:A0:E3:EC:8F:0D:A1:82:A4:E7",
+        "F4:D1:08:D0:CA:F0:57:F5:64:2B:27:4D:0D:E7:87:9B:6C:72:28:96:BD:20:1A:1F:95:7A:98:63:E4:F0:28:72",
+        "E2:B9:B0:CB:F6:46:CF:B7:6A:25:F6:85:58:7D:1A:2F:F6:08:3C:30:62:B2:72:BE:67:CA:1D:5C:7F:76:8B:F3"
+      ]
+    }
+  }
+]
