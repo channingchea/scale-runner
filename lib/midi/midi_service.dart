@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data' show Uint8List;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/services.dart' show MethodChannel, PlatformException;
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_midi_command/flutter_midi_command.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// A single Note On / Note Off event, decoded from the raw MIDI byte stream.
 class MidiNoteEvent {
@@ -134,12 +136,22 @@ class MidiService {
   StreamSubscription<String>? _setupSub;
   MidiDevice? _connected;
 
-  /// Id + name of the last device the user connected to. Retained across
-  /// unplugs so the same keyboard auto-reconnects when it reappears. USB MIDI
-  /// devices often re-enumerate with a fresh id, so we match on either id or
-  /// name. Cleared only by an explicit [disconnect].
+  /// Id + name + type of the last device the user connected to. Retained
+  /// across unplugs so the same keyboard auto-reconnects when it reappears,
+  /// and persisted to disk so it survives app restarts. USB MIDI devices
+  /// often re-enumerate with a fresh id, so we match on either id or name.
+  /// Cleared only by an explicit [disconnect].
   String? _lastDeviceId;
   String? _lastDeviceName;
+  String? _lastDeviceType;
+
+  static const _prefsId = 'midi_last_device_id';
+  static const _prefsName = 'midi_last_device_name';
+  static const _prefsType = 'midi_last_device_type';
+
+  AppLifecycleListener? _lifecycle;
+  bool _restoreStarted = false;
+  Timer? _scanStopTimer;
 
   /// Clean stream of decoded Note On/Off events for the quiz to consume.
   Stream<MidiNoteEvent> get noteStream => _noteController.stream;
@@ -162,6 +174,67 @@ class MidiService {
   void start() {
     _rxSub ??= _midi.onMidiDataReceived?.listen(_handlePacket);
     _setupSub ??= _midi.onMidiSetupChanged?.listen(_handleSetupChanged);
+    // Returning to the foreground doesn't always fire a MIDI setup change,
+    // so retry the remembered device explicitly on every app resume.
+    _lifecycle ??= AppLifecycleListener(onResume: attemptReconnect);
+    _restoreLastDevice();
+  }
+
+  /// Load the remembered device from disk (once per launch) and try to
+  /// reconnect, so the user's keyboard survives an app restart without a
+  /// trip back to the MIDI Devices screen. Guarded: plugins are absent in
+  /// widget tests and restore must never take the app down.
+  Future<void> _restoreLastDevice() async {
+    if (_restoreStarted) return;
+    _restoreStarted = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _lastDeviceId ??= prefs.getString(_prefsId);
+      _lastDeviceName ??= prefs.getString(_prefsName);
+      _lastDeviceType ??= prefs.getString(_prefsType);
+      await attemptReconnect();
+    } catch (e) {
+      debugPrint('MIDI restore unavailable: $e');
+    }
+  }
+
+  /// Try to reconnect to the remembered device right now. If it was a BLE
+  /// keyboard that isn't visible yet, scan briefly — once it surfaces, the
+  /// setup-change handler completes the reconnect. No-op when already
+  /// connected or nothing is remembered.
+  Future<void> attemptReconnect() async {
+    if (_connected != null || _lastDeviceId == null) return;
+    try {
+      await _tryAutoReconnect();
+      if (_connected != null || _lastDeviceType != 'BLE') return;
+      await _midi.startBluetoothCentral();
+      await _midi
+          .waitUntilBluetoothIsInitialized()
+          .timeout(const Duration(seconds: 5));
+      await _midi.startScanningForBluetoothDevices();
+      // Don't scan forever - it costs battery. 15s covers a keyboard that's
+      // already advertising; anything later still connects via the screen.
+      _scanStopTimer?.cancel();
+      _scanStopTimer = Timer(const Duration(seconds: 15),
+          _midi.stopScanningForBluetoothDevices);
+    } catch (e) {
+      debugPrint('MIDI reconnect attempt failed: $e'); // e.g. Bluetooth off
+    }
+  }
+
+  /// Remember [d] in memory and on disk for auto-reconnect (replug, resume,
+  /// and future launches). Prefs write is fire-and-forget.
+  void _rememberDevice(MidiDevice d) {
+    _lastDeviceId = d.id;
+    _lastDeviceName = d.name;
+    _lastDeviceType = d.type;
+    SharedPreferences.getInstance().then((p) {
+      p.setString(_prefsId, d.id);
+      p.setString(_prefsName, d.name);
+      p.setString(_prefsType, d.type);
+    }).catchError((Object e) {
+      debugPrint('MIDI prefs write failed: $e');
+    });
   }
 
   /// Single internal handler for every OS MIDI setup change. Reconciles
@@ -240,8 +313,7 @@ class MidiService {
     // connected", so just adopt it.
     if (device.connected) {
       _connected = device;
-      _lastDeviceId = device.id;
-      _lastDeviceName = device.name;
+      _rememberDevice(device);
       return;
     }
     if (_connected != null) {
@@ -261,8 +333,10 @@ class MidiService {
       }
     }
     _connected = device;
-    _lastDeviceId = device.id; // remember for auto-reconnect on replug
-    _lastDeviceName = device.name;
+    _rememberDevice(device);
+    // A reconnect scan may still be running - it's done its job now.
+    _scanStopTimer?.cancel();
+    _midi.stopScanningForBluetoothDevices();
   }
 
   /// Explicit, user-initiated disconnect. Clears [_lastDeviceId] so the device
@@ -274,6 +348,14 @@ class MidiService {
     }
     _lastDeviceId = null;
     _lastDeviceName = null;
+    _lastDeviceType = null;
+    SharedPreferences.getInstance().then((p) {
+      p.remove(_prefsId);
+      p.remove(_prefsName);
+      p.remove(_prefsType);
+    }).catchError((Object e) {
+      debugPrint('MIDI prefs clear failed: $e');
+    });
   }
 
   void _handlePacket(MidiPacket packet) {
@@ -291,7 +373,14 @@ class MidiService {
   void dispose() {
     _rxSub?.cancel();
     _setupSub?.cancel();
-    disconnect();
+    _lifecycle?.dispose();
+    _scanStopTimer?.cancel();
+    // Tear down the connection but do NOT forget the remembered device -
+    // only a user-initiated [disconnect] should erase it.
+    if (_connected != null) {
+      _midi.disconnectDevice(_connected!);
+      _connected = null;
+    }
     _noteController.close();
     _rawController.close();
     _setupController.close();

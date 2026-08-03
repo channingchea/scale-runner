@@ -25,12 +25,15 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
   List<MidiDevice> _devices = [];
   String? _lastNote;
   bool _loading = false;
+  bool _wasConnected = false;
+  bool _calibrateFlashOn = false;
   final List<StreamSubscription> _subs = [];
 
   @override
   void initState() {
     super.initState();
     widget.midi.start();
+    _wasConnected = widget.midi.isConnected;
     _subs.add(widget.midi.noteStream.listen((e) {
       if (e.isOn) _setLastNote(noteName(e.note));
     }));
@@ -60,9 +63,32 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
     final devices = await widget.midi.devices();
     if (!mounted) return;
     setState(() {
-      _devices = devices;
+      // Hide iOS's built-in RTP-MIDI endpoint ("Network Session 1") — a
+      // system fixture, not a keyboard; it only clutters the picker.
+      _devices = devices.where((d) => d.type != 'network').toList();
       _loading = false;
     });
+    _maybeFlashCalibrate();
+  }
+
+  /// Flash the Calibrate Timing button green twice whenever the connection
+  /// state flips from disconnected to connected, so users who just hooked up
+  /// a keyboard notice that calibration exists.
+  void _maybeFlashCalibrate() {
+    final connected = widget.midi.isConnected;
+    if (connected && !_wasConnected) _flashCalibrate();
+    _wasConnected = connected;
+  }
+
+  Future<void> _flashCalibrate() async {
+    for (var i = 0; i < 2; i++) {
+      if (!mounted) return;
+      setState(() => _calibrateFlashOn = true);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      setState(() => _calibrateFlashOn = false);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    }
   }
 
   Future<void> _calibrate() async {
@@ -92,6 +118,7 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
     await widget.midi.connect(d);
     if (!mounted) return;
     setState(() {});
+    _maybeFlashCalibrate();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Connected to ${d.name}')),
     );
@@ -179,10 +206,20 @@ class _MidiMonitorScreenState extends State<MidiMonitorScreen> {
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
+                height: 80, // 2x the standard button height for visibility
                 child: OutlinedButton.icon(
                   onPressed: _calibrate,
                   icon: const Icon(Icons.timer),
                   label: const Text('Calibrate Timing'),
+                  style: _calibrateFlashOn
+                      ? OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.correct,
+                          backgroundColor:
+                              AppColors.correct.withAlpha(46), // ~18%
+                          side: const BorderSide(
+                              color: AppColors.correct, width: 2),
+                        )
+                      : null,
                 ),
               ),
             ],
