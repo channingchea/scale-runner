@@ -72,8 +72,12 @@ class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
     final code = inviteCodeFromUri(uri);
     if (code == null || code == _lastInviteCode) return;
     _lastInviteCode = code;
-    navigatorKey.currentState?.push(MaterialPageRoute(
-        builder: (_) => AcceptInviteScreen(code: code)));
+    navigatorKey.currentState
+        ?.push(MaterialPageRoute(
+            builder: (_) => AcceptInviteScreen(code: code)))
+        // Clear the dedupe once the screen closes so tapping the same link
+        // again (as the invite page tells fresh installs to do) works.
+        .whenComplete(() => _lastInviteCode = null);
   }
 
   @override

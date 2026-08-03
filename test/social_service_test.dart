@@ -37,7 +37,7 @@ class FakeBackend implements SocialBackend {
   @override
   Future<AuthResult> signInWithApple() async {
     signedIn = true;
-    return const AuthSuccess(suggestedName: 'Channing');
+    return const AuthSuccess(suggestedName: 'Casey');
   }
 
   @override
@@ -203,13 +203,21 @@ void main() {
       );
 
   group('sign-in and profile', () {
+    test('concurrent init calls share one future', () async {
+      final s = fresh();
+      final f1 = s.init();
+      final f2 = s.init();
+      expect(identical(f1, f2), isTrue);
+      await Future.wait([f1, f2]);
+    });
+
     test('creates a profile with provider name + generated avatar', () async {
       final s = fresh();
       await s.init();
       final error = await s.signInWithApple();
       expect(error, isNull);
       expect(s.isSignedIn, isTrue);
-      expect(s.profile?.displayName, 'Channing');
+      expect(s.profile?.displayName, 'Casey');
       expect(s.profile?.avatarSeed, isNotEmpty);
     });
 

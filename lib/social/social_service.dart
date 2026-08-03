@@ -29,7 +29,7 @@ class SocialService extends ChangeNotifier {
   final QuizSettings? _injectedSettings;
   final ({int current, int best, int total}) Function()? _streakSource;
 
-  bool _inited = false;
+  Future<void>? _initFuture;
   bool _loading = false;
   SocialProfile? _profile;
   List<FriendEntry> _friends = const [];
@@ -81,10 +81,12 @@ class SocialService extends ChangeNotifier {
   // ---- Lifecycle ----
 
   /// Safe to call more than once; never throws (social must not break the
-  /// offline app).
-  Future<void> init() async {
-    if (_inited) return;
-    _inited = true;
+  /// offline app). All callers share one future, so awaiting it guarantees
+  /// the backend is ready — the invite screen relies on that when the app is
+  /// cold-started from a deep link while main()'s init is still running.
+  Future<void> init() => _initFuture ??= _init();
+
+  Future<void> _init() async {
     try {
       if (_backend == null) {
         if (kMockSocialData) {

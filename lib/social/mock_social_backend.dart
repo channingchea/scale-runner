@@ -80,7 +80,7 @@ class MockSocialBackend implements SocialBackend {
 
   @override
   Future<SocialProfile?> myProfile() async => const SocialProfile(
-      id: 'me', displayName: 'Channing', avatarSeed: '3:0');
+      id: 'me', displayName: 'Preview User', avatarSeed: '3:0');
 
   @override
   Future<void> upsertProfile(String displayName, String avatarSeed) async {}
