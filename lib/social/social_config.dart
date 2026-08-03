@@ -29,9 +29,10 @@ const bool kMockSocialData = kDebugMode && kMockSocialDataRequested;
 const String googleServerClientId =
     '1055426007613-o9apbh9ss4jk3h365evihij5ciodb9j3.apps.googleusercontent.com';
 
-/// Invite links: https://scalerunner.c1gnus.com/invite/<code>, served by
-/// web_hosting/worker.js (Cloudflare Worker) which also hosts the
-/// apple-app-site-association / assetlinks.json files for app links.
+/// Invite links: https://scalerunner.c1gnus.com/invite/<code>, served as
+/// static files from Hostinger (source of truth: web_hosting/hostinger/),
+/// which also hosts the apple-app-site-association / assetlinks.json files
+/// for app links.
 const String inviteHost = 'scalerunner.c1gnus.com';
 const String inviteBaseUrl = 'https://$inviteHost/invite';
 

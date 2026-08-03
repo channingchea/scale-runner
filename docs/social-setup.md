@@ -27,9 +27,11 @@ only you can access, then a two-device test.
 
 ## 3. Invite-link hosting
 
-Follow `web_hosting/README.md` — paste `worker.js` into a Cloudflare Worker
-and attach the custom domain `scalerunner.c1gnus.com`. Fill in the Android
-keystore SHA-256 (and real store URLs at launch).
+Live since 2026-08-01 on **Hostinger static hosting** (not Cloudflare —
+`c1gnus.com` uses Hostinger nameservers, so a Worker custom domain isn't
+possible without moving the zone). Follow `web_hosting/README.md`: the
+`scalerunner` subdomain in hPanel serves `web_hosting/hostinger/` verbatim.
+Fill in the Android keystore SHA-256 (and real store URLs at launch).
 
 ## 4. On-device verification (the plan's end-to-end check)
 

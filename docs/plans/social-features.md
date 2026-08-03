@@ -11,8 +11,11 @@ Implementation notes / deviations from plan:
 - Leaderboard ranks by current streak for now; the weekly-GPA ranking amendment
   activates when the Weekly Progress Report ships (W5).
 - Supabase project: `scale-runner` (`mbikuewjbvxndzhdorav`, us-west-1, free tier).
-- Invite redirect page: `web_hosting/worker.js` (Cloudflare Worker) for
-  `scalerunner.c1gnus.com`, serving AASA + assetlinks + landing page.
+- Invite redirect page: static files under `web_hosting/hostinger/`, served
+  from Hostinger at `scalerunner.c1gnus.com` (AASA + assetlinks + landing
+  page). The original plan called for a Cloudflare Worker; that was dropped
+  because the domain's DNS is on Hostinger. `web_hosting/worker.js` remains
+  as an undeployed alternative.
 
 ## Overview
 Add Duolingo-style social to Scale Runner: mutual friends via invite links, one-tap applause on friends' streaks, and a friends leaderboard ranked by current streak. The app today is fully offline, so this introduces its first backend (Supabase), optional sign-in, and cloud sync of streak data — while keeping the app 100% usable without an account.
