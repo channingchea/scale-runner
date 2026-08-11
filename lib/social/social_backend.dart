@@ -115,14 +115,22 @@ class SupabaseSocialBackend implements SocialBackend {
   @override
   Future<AuthResult> signInWithGoogle() async {
     try {
+      // iOS's Google SDK auto-generates a nonce when none is supplied, so the
+      // ID token always carries one; Supabase rejects a token whose nonce we
+      // can't produce. Supplying our own keeps both sides in sync.
+      final rawNonce = _generateNonce();
       final signIn = GoogleSignIn.instance;
-      await signIn.initialize(serverClientId: googleServerClientId);
+      await signIn.initialize(
+        serverClientId: googleServerClientId,
+        nonce: rawNonce,
+      );
       final account = await signIn.authenticate();
       final idToken = account.authentication.idToken;
       if (idToken == null) return const AuthError('Google sign-in failed.');
       await _client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
+        nonce: rawNonce,
       );
       return AuthSuccess(suggestedName: account.displayName);
     } on GoogleSignInException catch (e) {
