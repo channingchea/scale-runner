@@ -18,6 +18,7 @@ import 'social_screen.dart';
 import 'scale_run_screen.dart';
 import 'inversion_run_screen.dart';
 import 'jam_mode_screen.dart';
+import 'voicings_screen.dart';
 import 'midi_monitor_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -174,6 +175,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Voicings is free and ungated — no Pro check, no trial to consume. It
+  /// opens its collection rather than a drill: there's nothing to practise
+  /// until the user has built a shape.
+  void _openVoicings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VoicingsScreen(midi: widget.midi),
+      ),
+    );
+  }
+
   Future<void> _openJamModeGated() async {
     if (_purchases.isPro) {
       _openJamMode();
@@ -227,8 +239,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, 20 + MediaQuery.of(context).padding.bottom),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -255,6 +269,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onTap: () => _openQuiz(QuizMode.chord),
               ),
               const SizedBox(height: 14),
+              _ModeCard(
+                title: 'Voicings',
+                subtitle: 'Build a voicing, then play it in all 12 keys',
+                imagePath: 'assets/icon/Icon_Voicings.png',
+                onTap: _openVoicings,
+              ),
+              const SizedBox(height: 14),
+              // The three below are Pro; the two free modes sit above them.
               _ModeCard(
                 title: 'Scale Running',
                 subtitle:

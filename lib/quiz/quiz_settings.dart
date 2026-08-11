@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theory/music_theory.dart';
 import '../theory/scale_running.dart';
 import '../theory/jam_mode.dart';
+import '../theory/voicings.dart';
 import '../social/social_models.dart';
 import 'quiz_controller.dart';
 
@@ -98,6 +99,14 @@ class QuizSettings {
   static const _runKeyStatsKey = 'run_key_stats';
   static const _runModeStatsKey = 'run_mode_stats';
   static const _invChordStatsKey = 'inv_chord_stats';
+
+  // Voicings drill. There is deliberately no stats key: the mode is unscored,
+  // so nothing it does can reach accuracy, mode scores, or the leaderboard.
+  static const _voicingCustomsKey = 'voicing_customs';
+  static const _voicingStartKeyKey = 'voicing_start_key';
+  static const _voicingIncrementKey = 'voicing_increment';
+  static const _voicingShowDotsKey = 'voicing_show_dots';
+  static const _voicingShowFormulaKey = 'voicing_show_formula';
 
   // Latency configuration.
   static String _latencyKeyFor(String deviceName) => 'latency_$deviceName';
@@ -555,6 +564,85 @@ class QuizSettings {
       c += v.$2;
     }
     return (a, c);
+  }
+
+  // ---- Voicings drill ----
+
+  /// How many voicings a free user may save. Pro is unlimited. Going over the
+  /// limit (by buying Pro, saving, then lapsing) never deletes anything — it
+  /// only blocks saving more.
+  static const int freeVoicingLimit = 3;
+
+  /// The user's saved voicings, oldest first. A line that fails to decode is
+  /// skipped rather than thrown, so one corrupt entry can't hide the rest of
+  /// the collection.
+  Future<List<VoicingSpec>> savedVoicings() async {
+    final stored = await _prefs.getStringList(_voicingCustomsKey);
+    if (stored == null) return [];
+    return [
+      for (final line in stored) ?VoicingSpec.decode(line),
+    ];
+  }
+
+  /// Add [spec], or replace the one already holding its id. An edit or rename
+  /// keeps its place in the list rather than jumping to the end.
+  Future<void> upsertVoicing(VoicingSpec spec) async {
+    final all = await savedVoicings();
+    final i = all.indexWhere((v) => v.id == spec.id);
+    if (i >= 0) {
+      all[i] = spec;
+    } else {
+      all.add(spec);
+    }
+    await _writeVoicings(all);
+  }
+
+  Future<void> deleteVoicing(String id) async {
+    final all = await savedVoicings();
+    all.removeWhere((v) => v.id == id);
+    await _writeVoicings(all);
+  }
+
+  Future<void> _writeVoicings(List<VoicingSpec> all) async {
+    await _prefs.setStringList(
+        _voicingCustomsKey, [for (final v in all) v.encode()]);
+  }
+
+  /// Pitch class (0–11) the drill starts in. Default 0 (C).
+  Future<int> voicingStartKeyPc() async =>
+      (await _prefs.getInt(_voicingStartKeyKey) ?? 0).clamp(0, 11);
+
+  Future<void> setVoicingStartKeyPc(int pc) async {
+    await _prefs.setInt(_voicingStartKeyKey, pc % 12);
+  }
+
+  /// How the key advances between steps. Default chromatic (25 keys, up an
+  /// octave and back); fifths runs the circle once, 12 keys.
+  Future<KeyIncrement> voicingIncrement() async {
+    final stored = await _prefs.getString(_voicingIncrementKey);
+    return stored == KeyIncrement.fifths.name
+        ? KeyIncrement.fifths
+        : KeyIncrement.chromatic;
+  }
+
+  Future<void> setVoicingIncrement(KeyIncrement increment) async {
+    await _prefs.setString(_voicingIncrementKey, increment.name);
+  }
+
+  /// Whether the target dots hint is shown on the keyboard. Default on.
+  Future<bool> voicingShowDots() async =>
+      await _prefs.getBool(_voicingShowDotsKey) ?? true;
+
+  Future<void> setVoicingShowDots(bool on) async {
+    await _prefs.setBool(_voicingShowDotsKey, on);
+  }
+
+  /// Whether the degree formula is shown under the key. Default on.
+  Future<bool> voicingShowFormula() async =>
+      await _prefs.getBool(_voicingShowFormulaKey) ?? true;
+
+  Future<void> setVoicingShowFormula(bool on) async {
+    await _prefs.setBool(_voicingShowFormulaKey, on);
   }
 
   // ---- Pro trial sessions ----
