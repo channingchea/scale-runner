@@ -2,7 +2,7 @@ name: scale_runner
 description: "Scale Runner — a MIDI piano practice app for drilling scales, chords, and scale-running, with on-screen keys or a real keyboard."
 publish_to: 'none'
 
-version: 1.0.0+6
+version: 1.0.0+7
 
 environment:
   sdk: ^3.12.0
