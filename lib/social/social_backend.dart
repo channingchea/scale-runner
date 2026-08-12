@@ -112,19 +112,39 @@ class SupabaseSocialBackend implements SocialBackend {
     }
   }
 
+  // GoogleSignIn.instance is a process-wide singleton whose initialize() must
+  // be called exactly once, and the nonce can only be set there — so the nonce
+  // is fixed for the life of the app run and reused by every sign-in attempt.
+  static String? _googleRawNonce;
+  static Future<void>? _googleInit;
+
+  /// Initialises the Google SDK once and returns the raw nonce for Supabase.
+  ///
+  /// Google copies the nonce we give it into the ID token verbatim, while
+  /// Supabase sha256s whatever we hand `signInWithIdToken` before comparing it
+  /// to that claim. So Google gets the hash and Supabase gets the raw value —
+  /// the same split as Apple above. Passing raw to both is what produced
+  /// "Nonces mismatch" (400).
+  Future<String> _initGoogleSignIn() async {
+    final rawNonce = _googleRawNonce ??= _generateNonce();
+    final pending = _googleInit ??= GoogleSignIn.instance.initialize(
+      serverClientId: googleServerClientId,
+      nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+    );
+    try {
+      await pending;
+    } catch (_) {
+      _googleInit = null; // a failed init shouldn't block later attempts
+      rethrow;
+    }
+    return rawNonce;
+  }
+
   @override
   Future<AuthResult> signInWithGoogle() async {
     try {
-      // iOS's Google SDK auto-generates a nonce when none is supplied, so the
-      // ID token always carries one; Supabase rejects a token whose nonce we
-      // can't produce. Supplying our own keeps both sides in sync.
-      final rawNonce = _generateNonce();
-      final signIn = GoogleSignIn.instance;
-      await signIn.initialize(
-        serverClientId: googleServerClientId,
-        nonce: rawNonce,
-      );
-      final account = await signIn.authenticate();
+      final rawNonce = await _initGoogleSignIn();
+      final account = await GoogleSignIn.instance.authenticate();
       final idToken = account.authentication.idToken;
       if (idToken == null) return const AuthError('Google sign-in failed.');
       await _client.auth.signInWithIdToken(
