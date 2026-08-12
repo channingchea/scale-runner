@@ -10,7 +10,6 @@ import '../theme/app_theme.dart';
 import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
-import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/beat_debug.dart';
 import '../runner/jam_mode_controller.dart';
@@ -168,23 +167,12 @@ class _JamModeScreenState extends State<JamModeScreen> {
     if (streakUpdate.milestone case final m? when mounted) {
       await StreakMilestoneSheet.show(context, m);
     }
-    await _maybeShowPostTrialPaywall(settings, QuizSettings.modeJam);
+    if (mounted) {
+      await PaywallSheet.maybeShowAfterTrial(
+          context, settings, QuizSettings.modeJam);
+    }
     if (mounted) await ReminderPromptSheet.maybeShow(context);
     _endingSession = false;
-  }
-
-  /// If this session was played free-trial (Pro not owned, trial not yet
-  /// marked used), consume the trial now and open the paywall right behind
-  /// the summary sheet. A session interrupted before reaching the summary
-  /// (crash, back-out) never reaches here, so the trial survives — intentional.
-  Future<void> _maybeShowPostTrialPaywall(
-    QuizSettings? settings,
-    String mode,
-  ) async {
-    if (settings == null || PurchaseService.instance.isPro) return;
-    if (await settings.trialUsed(mode)) return;
-    await settings.markTrialUsed(mode);
-    if (mounted) await PaywallSheet.show(context);
   }
 
   Future<void> _openSettings() async {

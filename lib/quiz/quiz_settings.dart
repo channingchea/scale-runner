@@ -646,24 +646,41 @@ class QuizSettings {
   }
 
   // ---- Pro trial sessions ----
-  // Mode identifiers used both for the trial-used flag below and for
-  // matching a session's mode when deciding whether it just consumed the
-  // free trial. Stable strings (not enum names) so they survive refactors.
+  // Mode identifiers used both for the trial counters below and for matching
+  // a session's mode when deciding whether it just consumed a free trial.
+  // Stable strings (not enum names) so they survive refactors.
   static const String modeScaleRun = 'scale_run';
   static const String modeInversionRun = 'inversion_run';
   static const String modeJam = 'jam';
 
-  static String _trialUsedKeyFor(String mode) => 'trial_used_$mode';
+  /// How many free sessions each Pro mode grants before the paywall sticks.
+  static const int freeTrialSessions = 3;
 
-  /// Whether the one free trial session for [mode] has already been played.
-  /// Default false (trial available). Only meaningful while Pro isn't owned.
-  Future<bool> trialUsed(String mode) async =>
-      await _prefs.getBool(_trialUsedKeyFor(mode)) ?? false;
+  static String _trialCountKeyFor(String mode) => 'trial_count_$mode';
 
-  /// Mark [mode]'s free trial as consumed. Irreversible from the UI (no
-  /// "reset trial" action) — matches the "opens once, then paywall" flow.
-  Future<void> markTrialUsed(String mode) async {
-    await _prefs.setBool(_trialUsedKeyFor(mode), true);
+  /// Pre-3-attempt builds stored a single bool. Read only, for migration.
+  static String _legacyTrialUsedKeyFor(String mode) => 'trial_used_$mode';
+
+  /// How many free sessions of [mode] have been played. Users upgrading from
+  /// a build with the old one-shot trial count as having used exactly one, so
+  /// they gain the two extra attempts rather than losing their history.
+  Future<int> trialsUsed(String mode) async {
+    final count = await _prefs.getInt(_trialCountKeyFor(mode));
+    if (count != null) return count;
+    final legacy = await _prefs.getBool(_legacyTrialUsedKeyFor(mode)) ?? false;
+    return legacy ? 1 : 0;
+  }
+
+  /// Free sessions of [mode] still available. Only meaningful without Pro.
+  Future<int> trialsRemaining(String mode) async =>
+      (freeTrialSessions - await trialsUsed(mode)).clamp(0, freeTrialSessions);
+
+  /// Consume one free session of [mode] and return how many are left.
+  /// Irreversible from the UI (no "reset trial" action).
+  Future<int> consumeTrial(String mode) async {
+    final used = (await trialsUsed(mode)) + 1;
+    await _prefs.setInt(_trialCountKeyFor(mode), used);
+    return (freeTrialSessions - used).clamp(0, freeTrialSessions);
   }
 
   // ---- Daily practice streak ----

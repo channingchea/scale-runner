@@ -10,7 +10,7 @@ import '../theme/app_theme.dart';
 ///
 /// It matters because the store URLs 404 until then, so every shared link
 /// lands a new user on a dead page.
-const bool kPubliclyLaunched = false;
+const bool kPubliclyLaunched = true;
 
 /// Where "share with friends" points: the public store listing once launched,
 /// the beta invite before that. Keep in sync with the "Get Scale Runner"

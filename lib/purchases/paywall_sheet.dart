@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
 import 'purchase_service.dart';
 
@@ -10,6 +11,31 @@ import 'purchase_service.dart';
 /// restored), so callers can immediately proceed into the gated content.
 class PaywallSheet extends StatefulWidget {
   const PaywallSheet({super.key});
+
+  /// Consume one free session of [mode] after a run finishes, then nudge.
+  /// Earlier attempts only get a snackbar with the count left; the paywall
+  /// opens once the last free session is spent. A no-op for Pro users, and
+  /// for a session that ended before the summary (crash, back-out) — the
+  /// attempt survives, which is intentional.
+  static Future<void> maybeShowAfterTrial(
+    BuildContext context,
+    QuizSettings? settings,
+    String mode,
+  ) async {
+    if (settings == null || PurchaseService.instance.isPro) return;
+    if (await settings.trialsRemaining(mode) == 0) return;
+    final left = await settings.consumeTrial(mode);
+    if (!context.mounted) return;
+    if (left > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          '$left free ${left == 1 ? 'session' : 'sessions'} left in this mode.',
+        ),
+      ));
+      return;
+    }
+    await show(context);
+  }
 
   /// Show the paywall. Resolves to true if the user unlocked Pro.
   static Future<bool> show(BuildContext context) async {
@@ -102,8 +128,10 @@ class _PaywallSheetState extends State<PaywallSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Scrollable so the perk list can't overflow in landscape or at large
+    // text sizes — the sheet still sizes to its content when there's room.
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -139,9 +167,9 @@ class _PaywallSheetState extends State<PaywallSheet> {
             const SizedBox(height: 22),
             const _Perk(
               icon: Icons.directions_run,
-              title: 'Scale Running drill',
-              subtitle:
-                  'Run modes in time over chord progressions, key by key.',
+              title: 'Three timed drills, unlimited',
+              subtitle: 'Scale Running, Inversion Running and Jam Mode — '
+                  'in time, key by key, as often as you like.',
             ),
             const _Perk(
               icon: Icons.all_inclusive,
@@ -149,9 +177,16 @@ class _PaywallSheetState extends State<PaywallSheet> {
               subtitle: 'Full progression presets, sevenths, and key cycles.',
             ),
             const _Perk(
-              icon: Icons.favorite_outline,
-              title: 'Support development',
-              subtitle: 'Help keep Scale Runner growing.',
+              icon: Icons.piano,
+              title: 'Unlimited voicings',
+              subtitle:
+                  'Build and drill as many shapes as you want, past the free '
+                  '${QuizSettings.freeVoicingLimit}.',
+            ),
+            const _Perk(
+              icon: Icons.local_fire_department_outlined,
+              title: 'Streak protection',
+              subtitle: 'One missed day a week is repaired automatically.',
             ),
             const SizedBox(height: 24),
             FilledButton(

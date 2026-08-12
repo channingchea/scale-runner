@@ -133,8 +133,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     final settings = await QuizSettings.load();
-    if (!await settings.trialUsed(QuizSettings.modeScaleRun)) {
-      _showTrialToast('Scale Running');
+    final left = await settings.trialsRemaining(QuizSettings.modeScaleRun);
+    if (left > 0) {
+      _showTrialToast('Scale Running', left);
       if (mounted) _openScaleRun();
       return;
     }
@@ -157,8 +158,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     final settings = await QuizSettings.load();
-    if (!await settings.trialUsed(QuizSettings.modeInversionRun)) {
-      _showTrialToast('Inversion Running');
+    final left = await settings.trialsRemaining(QuizSettings.modeInversionRun);
+    if (left > 0) {
+      _showTrialToast('Inversion Running', left);
       if (mounted) _openInversionRun();
       return;
     }
@@ -192,8 +194,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     final settings = await QuizSettings.load();
-    if (!await settings.trialUsed(QuizSettings.modeJam)) {
-      _showTrialToast('Jam Mode');
+    final left = await settings.trialsRemaining(QuizSettings.modeJam);
+    if (left > 0) {
+      _showTrialToast('Jam Mode', left);
       if (mounted) _openJamMode();
       return;
     }
@@ -202,13 +205,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (unlocked && mounted) _openJamMode();
   }
 
-  /// Announces a mode's one free trial session. Shown once, right before the
-  /// mode opens unpaywalled for the first time.
-  void _showTrialToast(String modeLabel) {
+  /// Announces how many free sessions of a mode are left, right before it
+  /// opens unpaywalled. An attempt is only spent by finishing a session, so
+  /// this count doesn't move until the summary sheet.
+  void _showTrialToast(String modeLabel, int left) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Your first $modeLabel session is free — enjoy!')),
-    );
+    final msg = left == 1
+        ? 'Last free $modeLabel session — enjoy!'
+        : '$left free $modeLabel sessions left — enjoy!';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _openMonitor() {
