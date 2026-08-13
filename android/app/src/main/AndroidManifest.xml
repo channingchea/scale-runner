@@ -1,4 +1,23 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- flutter_midi_command declares all three of these as REQUIRED, which makes Play
+         hide the app from any device lacking USB-OTG, the Android MIDI service, or BLE.
+         Every one of them is optional here: the on-screen keys do everything, and the
+         two MIDI transports are alternatives to each other. tools:replace is needed
+         because the manifest merger ORs the required flag, so a plain required="false"
+         would lose to the library's value. -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false"
+        tools:replace="android:required"/>
+    <uses-feature
+        android:name="android.software.midi"
+        android:required="false"
+        tools:replace="android:required"/>
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false"
+        tools:replace="android:required"/>
     <!-- Practice reminders: Android 13+ runtime notification permission, plus
          boot receiver so scheduled reminders survive a device restart. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
