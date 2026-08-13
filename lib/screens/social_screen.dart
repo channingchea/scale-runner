@@ -127,6 +127,12 @@ class _SocialScreenState extends State<SocialScreen> {
                     style:
                         TextStyle(color: AppColors.textMuted, fontSize: 13),
                   ),
+                TextButton(
+                  onPressed: _showEmailSignIn,
+                  child: const Text('Sign in with email',
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 13)),
+                ),
               ],
             ],
           ),
@@ -153,6 +159,47 @@ class _SocialScreenState extends State<SocialScreen> {
     } else if (_social.isSignedIn) {
       await _social.markActivitySeen();
     }
+  }
+
+  Future<void> _showEmailSignIn() async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final creds = await showDialog<(String, String)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign in with email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: emailController,
+              autofocus: true,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(hintText: 'Email'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(hintText: 'Password'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+                context, (emailController.text, passwordController.text)),
+            child: const Text('Sign in'),
+          ),
+        ],
+      ),
+    );
+    if (creds == null || !mounted) return;
+    final (email, password) = creds;
+    await _signIn(() => _social.signInWithEmail(email, password));
   }
 
   // ---- Signed in ----

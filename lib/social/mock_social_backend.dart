@@ -73,6 +73,10 @@ class MockSocialBackend implements SocialBackend {
   Future<AuthResult> signInWithGoogle() async => const AuthSuccess();
 
   @override
+  Future<AuthResult> signInWithEmail(String email, String password) async =>
+      const AuthSuccess();
+
+  @override
   Future<void> signOut() async {}
 
   @override

@@ -47,6 +47,12 @@ class FakeBackend implements SocialBackend {
   }
 
   @override
+  Future<AuthResult> signInWithEmail(String email, String password) async {
+    signedIn = true;
+    return const AuthSuccess();
+  }
+
+  @override
   Future<void> signOut() async => signedIn = false;
 
   @override

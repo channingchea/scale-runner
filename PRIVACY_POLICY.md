@@ -1,34 +1,104 @@
 # Privacy Policy for Scale Runner
 
-**Last updated: June 14, 2026**
+**Last updated: August 12, 2026**
 
-Scale Runner ("the app") is a piano practice app developed for use with on-screen keys and MIDI keyboards.
+Scale Runner ("the app") is a piano practice app for drilling scales, chords, and
+voicings, using the on-screen keys or a MIDI keyboard. It is developed by Cygnus
+Innovations, LLC.
 
-## Data Collection
+Every practice mode in Scale Runner works without an account and without an
+internet connection. Signing in is optional and only adds the social features
+described below.
 
-Scale Runner does not collect, store, transmit, or share any personal data. The app does not have user accounts, does not connect to the internet, and does not use analytics, advertising, or tracking services of any kind.
+## What stays on your device
 
-## Data Stored on Your Device
+Whether or not you sign in, the app stores the following locally, using standard
+app preference storage:
 
-The app stores the following information locally on your device only, using standard app preferences storage:
+- Practice settings — which scales and chords are enabled, tempo, timing
+  difficulty, note sound, haptics, and hint toggles
+- Practice statistics — attempts and correct answers, aggregated per key, per
+  chord, per chord quality, and per mode
+- Your daily practice streak
+- Saved voicings
+- Your MIDI latency calibration offset and last-used MIDI device
+- Practice reminder preferences
 
-- Practice statistics (score, best streak)
-- App settings (note sound preference, onboarding status)
+This information never leaves your device unless you sign in, and it is removed
+when you uninstall the app.
 
-This information never leaves your device and is not accessible to the developer or any third party. It is deleted automatically if you uninstall the app.
+## If you create an account (optional)
+
+Signing in creates an account on our backend, hosted by Supabase in the United
+States. We then store:
+
+- **Your email address**, as provided by Apple or Google. If you use Sign in with
+  Apple and choose "Hide My Email", we only ever receive Apple's private relay
+  address.
+- **An account identifier** generated for your account.
+- **A display name and avatar** that you choose.
+- **Practice data used by the social features** — your current and best streak,
+  total practice days, a weekly practice summary, and per-mode attempt and
+  accuracy totals.
+- **Your friend list, the invite codes you generate, and applause** you send or
+  receive.
+
+This is used only to operate the features you signed in for: backing your streak
+up across devices, letting invited friends see it, and the streak leaderboard.
+
+**What other people can see:** your display name, avatar, and streak — and only
+people you have invited or whose invite you have accepted. Nothing else is
+shared. There is no public profile and no global directory.
+
+## Deleting your account
+
+You can delete your account at any time from **Practice with Friends → Account →
+Delete account** inside the app. This permanently removes your profile, streak,
+statistics, friendships, and invites from our backend. Signing out instead
+leaves your local practice data untouched.
+
+To request deletion by email, contact channing@c1gnus.com.
+
+## Purchases
+
+Scale Runner Pro is a one-time purchase. Payment is handled entirely by Apple or
+Google — we never see or receive your payment details. We use RevenueCat to
+validate the purchase and unlock the feature across your devices; RevenueCat
+receives a purchase receipt and an app-specific identifier. RevenueCat's privacy
+policy: https://www.revenuecat.com/privacy
+
+## What we do not do
+
+- We do not use analytics or crash-reporting services, and we collect no usage data
+  for analytics, advertising or measurement. The practice statistics described above
+  are stored only to run the features you signed in for.
+- We do not show ads, and the app contains no advertising or tracking SDKs.
+- We do not track you across other apps or websites.
+- We do not sell your data, and we do not share it with anyone for marketing.
+
+## Notifications
+
+Practice reminders are scheduled and delivered entirely on your device. There is
+no push notification server, and no device token is sent anywhere.
 
 ## MIDI and Bluetooth
 
-If you connect a MIDI keyboard via USB or Bluetooth, the app communicates directly with that device to receive note input. No information about your device, your playing, or your MIDI hardware is transmitted anywhere.
+When you connect a MIDI keyboard over USB or Bluetooth, the app communicates
+directly with that device to receive note input. Nothing about your device, your
+playing, or your hardware is transmitted off the device.
 
-## Children's Privacy
+## Children's privacy
 
-Scale Runner does not knowingly collect any information from anyone, including children under 13, because it does not collect information at all.
+Scale Runner is not directed at children under 13, and we do not knowingly
+collect personal information from them. Accounts are created through Sign in with
+Apple or Google, which are subject to those services' own age requirements. If you
+believe a child has created an account, contact us and we will delete it.
 
-## Changes to This Policy
+## Changes to this policy
 
-If this policy changes, the updated version will be posted here with a revised "Last updated" date.
+If this policy changes, the updated version will be posted here with a revised
+"Last updated" date.
 
 ## Contact
 
-If you have questions about this privacy policy, contact: channing@c1gnus.com
+Questions about this policy: channing@c1gnus.com

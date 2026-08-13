@@ -19,6 +19,12 @@ abstract class SocialBackend {
 
   Future<AuthResult> signInWithApple();
   Future<AuthResult> signInWithGoogle();
+
+  /// Email/password sign-in. Not exposed as a primary button — used for
+  /// app-store reviewer accounts since Apple/Google sign-in needs real
+  /// third-party credentials a reviewer can't be handed.
+  Future<AuthResult> signInWithEmail(String email, String password);
+
   Future<void> signOut();
 
   /// Deletes the auth account server-side (edge function) and signs out.
@@ -158,6 +164,18 @@ class SupabaseSocialBackend implements SocialBackend {
         return const AuthCancelled();
       }
       return AuthError(e.description ?? 'Google sign-in failed.');
+    } catch (e) {
+      return AuthError('$e');
+    }
+  }
+
+  @override
+  Future<AuthResult> signInWithEmail(String email, String password) async {
+    try {
+      await _client.auth.signInWithPassword(email: email, password: password);
+      return const AuthSuccess();
+    } on AuthException catch (e) {
+      return AuthError(e.message);
     } catch (e) {
       return AuthError('$e');
     }

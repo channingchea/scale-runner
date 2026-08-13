@@ -143,6 +143,9 @@ class SocialService extends ChangeNotifier {
 
   Future<String?> signInWithGoogle() => _signIn((b) => b.signInWithGoogle());
 
+  Future<String?> signInWithEmail(String email, String password) =>
+      _signIn((b) => b.signInWithEmail(email, password));
+
   Future<String?> _signIn(
       Future<AuthResult> Function(SocialBackend) doSignIn) async {
     final backend = _backend;
