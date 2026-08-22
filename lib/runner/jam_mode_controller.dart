@@ -94,6 +94,7 @@ class JamModeController extends ChangeNotifier {
     this.beatsPerBar = 4,
     this.sessionBars = 24,
     this.freestyle = false,
+    this.anyTones = false,
     int? seed,
     this.onBeatMs = 70,
     this.closeMs = 150,
@@ -121,6 +122,13 @@ class JamModeController extends ChangeNotifier {
   /// repeat the last scale degree) instead of being shown a specific chord
   /// each bar (Prompted).
   final bool freestyle;
+
+  /// "Any chord tones": any 3+ note voicing (doubles count) built from the
+  /// degree's stack tones (1-2-3-4-5-7-9) scores, as long as the lowest held
+  /// note is the chord root. Prompts show root only ("ii — D"); [families] is
+  /// ignored; bars score by degree only (no quality tally). In Freestyle the
+  /// bass note names the degree.
+  final bool anyTones;
 
   final Random _rng;
 
@@ -283,7 +291,7 @@ class JamModeController extends ChangeNotifier {
   /// (octave-free, no extra notes) — drives the "chord matched" indicator.
   /// In Freestyle this means: a diatonic chord from an enabled family is held
   /// and it isn't a repeat of the last legal degree.
-  bool get currentChordMatched => freestyle
+  bool get currentChordMatched => (freestyle || anyTones)
       ? _isChordComplete
       : (_current != null &&
           _validator.evaluate(_held) == ValidationStatus.complete);
@@ -291,7 +299,12 @@ class JamModeController extends ChangeNotifier {
   /// Freestyle only: the chord currently recognized while building, for the
   /// live readout pill. Null outside Freestyle, when idle, no notes held, or
   /// nothing recognized yet.
-  JamChordMatch? get liveChordMatch => freestyle ? _liveMatch : null;
+  JamChordMatch? get liveChordMatch {
+    if (!freestyle) return null;
+    if (!anyTones) return _liveMatch;
+    final m = _openMatch;
+    return m == null ? null : JamChordMatch(m, true);
+  }
 
   /// Freestyle only: whether the live-recognized chord shares a degree with
   /// the last legal chord — striking it now would score a repeat miss.
@@ -391,7 +404,9 @@ class JamModeController extends ChangeNotifier {
 
   void _rebuildPicker() {
     _jamKey = JamKey(keyPc);
-    _picker = JamPromptPicker(_jamKey.prompts(families), rng: _rng);
+    _picker = JamPromptPicker(
+        anyTones ? _jamKey.openPrompts() : _jamKey.prompts(families),
+        rng: _rng);
     _validator = ChordValidator(_jamKey.chord(1, JamFamily.triad).pitchClasses);
     _matcher = JamChordMatcher(_jamKey, families);
   }
@@ -464,11 +479,36 @@ class JamModeController extends ChangeNotifier {
   }
 
   bool get _isChordComplete {
+    if (anyTones) {
+      final m = _openMatch;
+      return m != null && (!freestyle || m.degree != _forbiddenDegree);
+    }
     if (freestyle) {
       final m = _liveMatch;
       return m != null && m.enabled && m.chord.degree != _forbiddenDegree;
     }
     return _validator.evaluate(_held) == ValidationStatus.complete;
+  }
+
+  /// "Any chord tones": the open chord currently voiced, or null. Requires at
+  /// least 3 keys held (doubles count), every held pitch class inside the
+  /// degree's stack, and the lowest key sounding the root. Prompted matches
+  /// only against the prompted degree; Freestyle names the degree from the
+  /// bass note (the forbidden-repeat check is the caller's job, so the live
+  /// pill can still show a repeat as a repeat).
+  JamChord? get _openMatch {
+    if (_held.length < 3) return null;
+    final bassPc = pitchClassOf(_held.reduce(min));
+    final heldPcs = _held.map(pitchClassOf).toSet();
+    if (!freestyle) {
+      final c = _current;
+      if (c == null || _jamKey.rootPcOf(c.degree) != bassPc) return null;
+      return heldPcs.every(c.pitchClasses.contains) ? c : null;
+    }
+    final degree = _jamKey.degreeOfRoot(bassPc);
+    if (degree == null) return null;
+    final chord = _jamKey.openChord(degree);
+    return heldPcs.every(chord.pitchClasses.contains) ? chord : null;
   }
 
   /// The grace timer expired without the chord being completed: lock in a miss
@@ -513,8 +553,9 @@ class JamModeController extends ChangeNotifier {
   /// strike locked in before the downbeat ([_pendingOffBy]), which counts as
   /// matched even if the keys were released before the tick.
   void _scoreCurrent({required int? offBy, bool preMatched = false}) {
-    final chord =
-        freestyle ? (_pendingChord ?? _liveMatch?.chord) : _current;
+    final chord = freestyle
+        ? (_pendingChord ?? (anyTones ? _openMatch : _liveMatch?.chord))
+        : _current;
     final matched = preMatched || _isChordComplete;
 
     final JamResult verdict;
@@ -548,7 +589,10 @@ class JamModeController extends ChangeNotifier {
     }
 
     if (chord != null) {
-      (qualityScores[chord.qualityKey] ??= JamTally()).record(ok);
+      // "Any chord tones" bars have no fixed quality — degree tally only.
+      if (!anyTones) {
+        (qualityScores[chord.qualityKey] ??= JamTally()).record(ok);
+      }
       (degreeScores[chord.degreeKey] ??= JamTally()).record(ok);
     }
     if (freestyle && ok && chord != null) {
@@ -608,7 +652,9 @@ class JamModeController extends ChangeNotifier {
             final offBy = _judge.offByBeforeNextTick();
             if (_judge.withinGrace(offBy)) {
               _pendingOffBy = offBy;
-              if (freestyle) _pendingChord = _liveMatch?.chord;
+              if (freestyle) {
+                _pendingChord = anyTones ? _openMatch : _liveMatch?.chord;
+              }
             }
           }
           // Completed earlier in the count-in: no lock needed — a chord still

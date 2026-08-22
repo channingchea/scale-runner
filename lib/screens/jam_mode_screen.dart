@@ -92,6 +92,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
     final families = await settings.jamFamilies();
     final sessionBars = await settings.jamSessionBars();
     final freestyle = await settings.jamFreestyle();
+    final anyTones = await settings.jamAnyTones();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
@@ -100,6 +101,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
       families: families,
       sessionBars: sessionBars,
       freestyle: freestyle,
+      anyTones: anyTones,
       onBeatMs: difficulty.onBeatMs,
       closeMs: difficulty.closeMs,
     );

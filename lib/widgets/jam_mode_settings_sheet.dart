@@ -42,6 +42,7 @@ class JamModeSettingsSheet extends StatefulWidget {
 class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
   int _keyPc = 0;
   Set<JamFamily> _families = JamFamily.values.toSet();
+  bool _anyTones = false;
   int _sessionBars = 24;
   bool _freestyle = false;
   bool _countInNumbers = true;
@@ -58,6 +59,7 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
   Future<void> _init() async {
     final keyPc = await widget.settings.jamKeyPc();
     final families = await widget.settings.jamFamilies();
+    final anyTones = await widget.settings.jamAnyTones();
     final sessionBars = await widget.settings.jamSessionBars();
     final freestyle = await widget.settings.jamFreestyle();
     final countInNumbers = await widget.settings.jamCountInNumbers();
@@ -67,6 +69,7 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
     setState(() {
       _keyPc = keyPc;
       _families = families;
+      _anyTones = anyTones;
       _sessionBars = sessionBars;
       _freestyle = freestyle;
       _countInNumbers = countInNumbers;
@@ -97,6 +100,12 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
   Future<void> _pickKey(int pc) async {
     setState(() => _keyPc = pc);
     await widget.settings.setJamKeyPc(pc);
+    widget.onChanged();
+  }
+
+  Future<void> _pickAnyTones(bool on) async {
+    setState(() => _anyTones = on);
+    await widget.settings.setJamAnyTones(on);
     widget.onChanged();
   }
 
@@ -164,6 +173,17 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
                         _keyChips(),
                         _sectionDivider(),
                         _sectionHeader('Chord families'),
+                        _switchTile(
+                          value: _anyTones,
+                          onChanged: _pickAnyTones,
+                          title: 'Any chord tones',
+                          subtitle:
+                              'Play any voicing of 3 or more notes built on '
+                              'the prompted root — 3rds, 7ths, 9ths, sus '
+                              'tones, doubled freely. The lowest note must '
+                              'be the root. The family picks below are '
+                              'ignored while this is on.',
+                        ),
                         for (final f in JamFamily.values) _familyTile(f),
                         _sectionDivider(),
                         _sectionHeader('Session length'),
@@ -400,16 +420,19 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
 
   Widget _familyTile(JamFamily family) {
     final selected = _families.contains(family);
+    // Greyed out (but remembered) while "Any chord tones" is on.
     return ListTile(
-      onTap: () => _toggleFamily(family),
+      enabled: !_anyTones,
+      onTap: _anyTones ? null : () => _toggleFamily(family),
       title: Text(
         family.label,
-        style: const TextStyle(
-            color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+        style: TextStyle(
+            color: _anyTones ? AppColors.textMuted : AppColors.textPrimary,
+            fontWeight: FontWeight.w500),
       ),
       trailing: Icon(
         selected ? Icons.check_circle : Icons.circle_outlined,
-        color: selected ? AppColors.accent : AppColors.textMuted,
+        color: selected && !_anyTones ? AppColors.accent : AppColors.textMuted,
         size: 20,
       ),
     );

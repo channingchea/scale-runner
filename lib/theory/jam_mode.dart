@@ -231,6 +231,41 @@ class JamKey {
     );
   }
 
+  /// Union of every family's tones on [degree]: root, 2, 3, 4, 5, 7, 9 —
+  /// the 9th shares the 2nd's pitch class, so this is all 6 in-key pitch
+  /// classes except the 6th above the root. The valid-note set for the
+  /// "any chord tones" toggle.
+  Set<int> stackPcs(int degree) => {
+        for (final step in const [0, 1, 2, 3, 4, 6]) _degreeUp(degree, step),
+      };
+
+  /// Scale degree (1–7) whose root is pitch class [pc], or null if [pc]
+  /// isn't a diatonic root. "Any chord tones" Freestyle reads the bass note
+  /// through this.
+  int? degreeOfRoot(int pc) {
+    for (var d = 1; d <= 7; d++) {
+      if (_h.degreePc(d) == pc) return d;
+    }
+    return null;
+  }
+
+  /// The "any chord tones" prompt for [degree]: name is just the root letter
+  /// (prompt reads "ii — D"), pitch classes are the whole [stackPcs] union.
+  /// These bars score by degree only — [JamChord.qualityKey] is meaningless
+  /// here and the controller skips the quality tally.
+  JamChord openChord(int degree) => JamChord(
+        degree: degree,
+        family: JamFamily.triad,
+        susType: 0,
+        pitchClasses: stackPcs(degree),
+        roman: roman(degree),
+        name: pitchClassNames[_h.degreePc(degree)],
+        formula: '1-3-5-7-9 · sus',
+      );
+
+  /// The 7 open prompts (one per degree) for the "any chord tones" toggle.
+  List<JamChord> openPrompts() => [for (var d = 1; d <= 7; d++) openChord(d)];
+
   /// Every prompt-able chord for an [enabled] family set, degrees 1–7. Sus
   /// contributes both sus2 and sus4 per degree. Diminished degrees are kept in
   /// all families (vii°maj9 etc. are legal diatonic stacks).

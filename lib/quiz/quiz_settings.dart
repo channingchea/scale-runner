@@ -94,6 +94,7 @@ class QuizSettings {
   static const _jamSessionBarsKey = 'jam_session_bars';
   static const _jamCountInNumbersKey = 'jam_count_in_numbers';
   static const _jamFreestyleKey = 'jam_freestyle';
+  static const _jamAnyTonesKey = 'jam_any_tones';
   static const _jamQualityStatsKey = 'jam_quality_stats';
   static const _jamDegreeStatsKey = 'jam_degree_stats';
   static const _runKeyStatsKey = 'run_key_stats';
@@ -464,6 +465,16 @@ class QuizSettings {
 
   Future<void> setJamFreestyle(bool on) async {
     await _prefs.setBool(_jamFreestyleKey, on);
+  }
+
+  /// Jam Mode "any chord tones" toggle: any 3+ note voicing built from the
+  /// degree's stack tones scores, as long as the lowest note is the root.
+  /// While on, the family selection is ignored (but kept stored). Default off.
+  Future<bool> jamAnyTones() async =>
+      await _prefs.getBool(_jamAnyTonesKey) ?? false;
+
+  Future<void> setJamAnyTones(bool on) async {
+    await _prefs.setBool(_jamAnyTonesKey, on);
   }
 
   /// Lifetime per-quality accuracy aggregates, accumulated across all sessions.
