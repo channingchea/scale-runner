@@ -4,6 +4,37 @@
 
 ---
 
+## Status update — 2026-08-17
+
+Both stores are submitted. This section is the current truth; §0's "blockers
+before submission" below is now historical — left in place so the doc still
+reads top to bottom, but don't act on it as a to-do list.
+
+- **iOS 1.0** submitted 2026-08-12, build 1.0.0+8 — was "Waiting for Review" as
+  of submission. Check App Store Connect for current status; Apple's typical
+  window (2–5 days) has elapsed, so it may already be approved.
+- **Android 1.0.0 (11)** submitted 2026-08-13 to production, 177 countries —
+  was "in review." Google quotes up to 7 days, so it's likely still pending as
+  of today. Check Play Console.
+- `kPubliclyLaunched` is already `true`. The two beta URLs in
+  `web_hosting/hostinger/invite/index.html` are **still pointing at
+  TestFlight/Firebase** — deliberately left alone until **both** listings go
+  public, per plan. Swap them the moment both are live.
+- **iOS sandbox purchase test and Android license-tester purchase test have
+  still never been run.** As of 2026-08-12 the App Store IAP
+  (`com.scalerunner.app.pro`) was sitting in "Missing Metadata" in App Store
+  Connect, which would block the paywall from loading a price. Verify this is
+  cleared before launch day — if it's still stuck, the $14.99 unlock won't
+  work on day one.
+- Google sign-in on Android is confirmed working on real hardware. Invite
+  links opening the app have **not** been confirmed on hardware yet.
+- Landing page at `scalerunner.c1gnus.com`, beta tester emails, personal
+  network outreach, pre-launch video posting, and teacher outreach (§3,
+  Days 2–7) — no record of any of these having started yet. This is very
+  likely today's actual work.
+
+---
+
 ## 0. The timeline reality check (read this first)
 
 You said "launch within the week." Neither app is submitted yet, so **that is not
@@ -39,6 +70,9 @@ and a burst of day-one installs is the single biggest free ranking signal either
 store gives you.
 
 ### Blockers that must close before submission
+
+*(Historical — both stores are now submitted. See "Status update" above for
+what's actually still open.)*
 
 - **iOS IAP** — the RevenueCat/Apple bundle-ID credential incident. If it's
   still open, you can submit the app but the $14.99 unlock won't validate.
@@ -159,21 +193,27 @@ shoot once, use twice.
 
 ## 3. The 14-day plan
 
-### Days 1–2 (Wed 8/13 – Thu 8/14) — Ship the submission
+### Days 1–2 (Wed 8/13 – Thu 8/14) — Ship the submission ✅ DONE
 
-- Close the iOS IAP blocker or accept shipping with the paywall inactive on iOS.
-- On-device pass: Google sign-in, invite link opens app, purchase flow, a full
-  practice run start to finish.
-- Flip `kPubliclyLaunched`, swap invite-page URLs.
-- Build ASO assets (screenshots, video, copy above).
-- **Submit both stores.** Do not sit on this — every hour of delay is an hour
-  of review clock not running.
+- ~~Close the iOS IAP blocker or accept shipping with the paywall inactive on
+  iOS.~~ iOS submitted 8/12 with the IAP attached; metadata status needs a
+  recheck (see Status update above).
+- ~~On-device pass: Google sign-in, invite link opens app, purchase flow, a
+  full practice run start to finish.~~ Google sign-in confirmed. Invite link
+  and purchase flow **still not confirmed on hardware** — carry this forward,
+  don't drop it.
+- ✅ Flipped `kPubliclyLaunched`. Invite-page URL swap is intentionally
+  deferred until both listings are public (see Status update).
+- ✅ ASO assets built (iPhone, iPad, and Android screenshots all shipped).
+- ✅ **Submitted both stores** — iOS 8/12, Android 8/13.
 
-### Days 2–7 — Build the day-one list while review runs
+### Days 2–7 (through ~Mon 8/19) — Build the day-one list while review runs — 🔶 LIKELY NOT STARTED
 
 This is the whole game. Your objective is **a list of 100+ people who will
 install on launch day**, because concentrated installs is what moves store
 ranking, and ranking is the only free distribution either store gives you.
+No record of any of the below having started — this is probably where today's
+work belongs, alongside the local-outreach push in §8.
 
 - **Landing page.** You already own `scalerunner.c1gnus.com` and it's live on
   Hostinger. Replace the bare redirect at `/` with a real page: hero line, the
@@ -190,8 +230,11 @@ ranking, and ranking is the only free distribution either store gives you.
   out who to show you to. If your first post is on launch day, it reaches
   nobody. Every video ends with "launching next week — link in bio."
 - **Teacher outreach.** 10 emails a day, every day. Template in §5.
+- **Local music schools/stores.** Non-salesy demo asks over IG/FB DM. See §8
+  for the approach, script, and a starter list of 16 LA/Riverside County
+  targets.
 
-### Day 8 (approx. Wed 8/20) — Launch day
+### Day 8 (approx. Wed 8/20) — Launch day — contingent on both stores approving by then; recheck ASC/Play console
 
 - Email the list. One email, one link, morning Pacific.
 - Post the launch video across all three platforms.
@@ -309,6 +352,81 @@ real product worth pushing on. 1,000 installs with 3% retention is a leaky
 bucket, and pouring marketing into it wastes the effort. If retention is weak
 after week one, stop marketing and fix the product — the rewards system is
 almost certainly the fix.
+
+---
+
+## 8. Local outreach — music schools & stores (added 2026-08-17)
+
+Same logic as the teacher-email channel in §5, but lower-friction: a short,
+non-salesy DM to the school or store's Instagram or Facebook, asking if
+they'd be open to a quick demo. No pitch, no ask for money or a partnership —
+just "would you want to see it." A demo that goes well can turn into the
+teacher-email ask (free codes, referrals to students) naturally, but don't
+lead with that.
+
+### The approach
+
+- **DM, don't email**, for this channel — small studios check IG/FB DMs faster
+  than a general inbox, and a DM reads more personal than an email blast.
+  Instagram usually gets a better response rate than Facebook for this size of
+  business.
+- **Pace it like the teacher outreach:** a handful a day, not all 16 at once.
+  Personalize the first line with the school's name and city so it doesn't
+  read as copy-pasted.
+- **Follow up once** after 5–7 days of silence, then move on. Don't chase past
+  that.
+- If a demo happens and goes well, that's the moment to offer free Pro codes
+  for their students (§5's teacher template) and ask if they'd share it with
+  their roster.
+
+### DM script
+
+> Hi! I'm a local developer/pianist and I built Scale Runner — an app that
+> connects to a MIDI keyboard and scores scale/chord practice on timing, so
+> players get instant feedback instead of guessing. It's launching now on
+> iOS/Android.
+>
+> Would you be open to a quick demo sometime? No pitch — I'd genuinely like to
+> show it to people who teach this every day and hear what you think.
+
+### Starter list — LA County & Riverside County (16)
+
+Independent schools and stores, not the big chains (Guitar Center, School of
+Rock, Music & Arts) — a small studio's owner is far more likely to actually
+read a DM and take a demo than a corporate location.
+
+| Done | School / store | City | Instagram | Facebook |
+|---|---|---|---|---|
+| [x] | Los Angeles School of Music | Los Angeles | [@laschoolofmusic](https://www.instagram.com/laschoolofmusic/) | [losangelesschoolofmusic](https://www.facebook.com/losangelesschoolofmusic/) |
+| [x] | Angeles Academy of Music | Los Angeles | [@angelesacademyofmusic](https://www.instagram.com/angelesacademyofmusic/) | [angelesacademyofmusic](https://www.facebook.com/angelesacademyofmusic/) |
+| [x] | Hollywood Academy of Music & Arts | Hollywood | — (not found) | [hollywoodacademyofmusicmelrose](https://www.facebook.com/hollywoodacademyofmusicmelrose) |
+| [x] | Cal Heights Music | Long Beach | [@calheightsmusic](https://www.instagram.com/calheightsmusic) | [calheightsmusic](https://www.facebook.com/calheightsmusic) |
+| [x] | Belmont Music Studio | Long Beach | [@belmontmusicstudio](https://www.instagram.com/belmontmusicstudio/) | [Belmont-Music-Studio](https://www.facebook.com/pages/Belmont-Music-Studio/143077955754827) |
+| [x] | Encore Music School | South Pasadena | [@encoremusicsouthpasadena](https://www.instagram.com/encoremusicsouthpasadena/) | [encoresanmarino](https://www.facebook.com/encoresanmarino/) |
+| [x] | K Music Academy | Pasadena | [@kmusicacademy](https://www.instagram.com/kmusicacademy/) | [Kmusicacademypasadena](https://www.facebook.com/Kmusicacademypasadena) |
+| [x] | Melody Intl. Music School | Glendale | [@melodyintl.musicschool](https://www.instagram.com/melodyintl.musicschool) | [melodymusicschool](https://www.facebook.com/melodymusicschool) |
+| [x] | Hollywood Piano (School of Music) | Burbank / Glendale / LA | [@HollywoodPiano](https://instagram.com/HollywoodPiano) | [HollywoodPiano](https://www.facebook.com/HollywoodPiano) |
+| [x] | Rockside Music | Riverside | [@rocksidemusic](http://www.instagram.com/rocksidemusic) | [rocksidemusic](http://www.facebook.com/rocksidemusic/) |
+| [x] | Corona Music Center | Corona | [@lahabramusic](https://www.instagram.com/lahabramusic/) (shared with parent brand) | [MusicLessonsInCorona](https://www.facebook.com/MusicLessonsInCorona/) |
+| [x] | Bach to the Basics | Corona | [@bachtothebasics](https://www.instagram.com/bachtothebasics/) | [BachToTheBasics](https://www.facebook.com/BachToTheBasics) |
+| [x] | Musicology Temecula | Temecula | [@musicologytemecula](https://www.instagram.com/musicologytemecula/) | [musicologytemecula](https://www.facebook.com/musicologytemecula) |
+| [x] | Temecula Music Teacher | Temecula | [@temeculamusicteacher](https://instagram.com/temeculamusicteacher/) | [temeculamusicteacher](https://www.facebook.com/temeculamusicteacher) |
+| [x] | Academy of Music and Arts | Murrieta / Menifee / Temecula | [@academyofmusik](https://www.instagram.com/academyofmusik/) | [MurrietaMusicAcademy](https://www.facebook.com/MurrietaMusicAcademy/) |
+| [x] | Temecula Valley Piano | Murrieta | — (not found) | [temeculavalleypianolessons](https://www.facebook.com/temeculavalleypianolessons/) |
+
+Notes:
+- 9 in LA County (LA, Long Beach, Pasadena/South Pasadena, Glendale, Burbank),
+  7 in Riverside County (Riverside, Corona, Temecula, Murrieta).
+- Two entries only have one confirmed platform — DM whichever one is listed.
+- Corona Music Center's Instagram is shared with its sister store, La Habra
+  Music Center (same ownership) — worth a line acknowledging that if it comes
+  up.
+- Links were pulled from each business's own website in August 2026 — worth a
+  quick glance before DMing in case a handle has since changed.
+- This is a starter batch, not exhaustive. Once these 16 are worked through,
+  the same search pattern (site + "Instagram"/"Facebook" for nearby cities —
+  Santa Monica, Inglewood, Downey for LA County; Moreno Valley, Perris, Hemet
+  for Riverside County) will turn up more.
 
 ---
 
