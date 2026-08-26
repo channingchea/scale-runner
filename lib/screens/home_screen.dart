@@ -127,6 +127,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Opens the paywall straight from a locked mode's PRO badge — the direct
+  /// route to the in-app purchase, independent of the free-session counters.
+  Future<void> _showPaywall() async {
+    final unlocked = await PaywallSheet.show(context);
+    if (unlocked && mounted) setState(() {});
+  }
+
   Future<void> _openScaleRunGated() async {
     if (_purchases.isPro) {
       _openScaleRun();
@@ -289,6 +296,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 imagePath: 'assets/icon/Icon_Running.png',
                 locked: !_purchases.isPro,
                 onTap: _openScaleRunGated,
+                onBadgeTap: _showPaywall,
               ),
               const SizedBox(height: 14),
               _ModeCard(
@@ -298,6 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 imagePath: 'assets/icon/invert-run.png',
                 locked: !_purchases.isPro,
                 onTap: _openInversionRunGated,
+                onBadgeTap: _showPaywall,
               ),
               const SizedBox(height: 14),
               _ModeCard(
@@ -307,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 imagePath: 'assets/icon/Jam.png',
                 locked: !_purchases.isPro,
                 onTap: _openJamModeGated,
+                onBadgeTap: _showPaywall,
               ),
             ],
           ),
@@ -454,6 +464,7 @@ class _ModeCard extends StatelessWidget {
     required this.imagePath,
     required this.onTap,
     this.locked = false,
+    this.onBadgeTap,
   });
 
   final String title;
@@ -461,6 +472,10 @@ class _ModeCard extends StatelessWidget {
   final String imagePath;
   final VoidCallback onTap;
   final bool locked;
+
+  /// Tapping the PRO badge itself opens the paywall directly, without
+  /// spending a free session. Falls back to [onTap] when null.
+  final VoidCallback? onBadgeTap;
 
   @override
   Widget build(BuildContext context) {
@@ -503,7 +518,7 @@ class _ModeCard extends StatelessWidget {
               ),
             ),
             if (locked)
-              const _ProBadge()
+              _ProBadge(onTap: onBadgeTap)
             else
               const Icon(Icons.arrow_forward_ios,
                   size: 16, color: AppColors.textMuted),
@@ -561,11 +576,13 @@ class _StreakBadge extends StatelessWidget {
 }
 
 class _ProBadge extends StatelessWidget {
-  const _ProBadge();
+  const _ProBadge({this.onTap});
+
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         gradient: AppColors.accentGradient,
@@ -583,6 +600,12 @@ class _ProBadge extends StatelessWidget {
                   color: Color(0xFF06251F))),
         ],
       ),
+    );
+    if (onTap == null) return badge;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: badge,
     );
   }
 }

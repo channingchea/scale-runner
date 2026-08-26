@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../notifications/notification_service.dart';
+import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
@@ -86,6 +87,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _settings?.setTickHapticEnabled(on);
   }
 
+  Future<void> _unlockPro() async {
+    final unlocked = await PaywallSheet.show(context);
+    if (unlocked && mounted) setState(() {});
+  }
+
   Future<void> _restore() async {
     setState(() => _restoring = true);
     try {
@@ -153,6 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 _sectionDivider(),
                 _sectionHeader('Purchases'),
+                _unlockProTile(),
                 _restoreTile(),
                 _sectionDivider(),
                 _sectionHeader('About'),
@@ -175,6 +182,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               fontSize: 15,
               fontWeight: FontWeight.w700)),
       onTap: _pickReminderTime,
+    );
+  }
+
+  /// Always-visible purchase entry point. Without it the only way to reach
+  /// the paywall is to spend every free session of a gated mode, which App
+  /// Review flagged under Guideline 2.1(b) as "cannot locate the IAP".
+  Widget _unlockProTile() {
+    if (PurchaseService.instance.isPro) {
+      return const ListTile(
+        leading: Icon(Icons.workspace_premium, color: AppColors.accent),
+        title: Text('Scale Runner Pro',
+            style: TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+        subtitle: Text('Unlocked — thanks for the support!',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      );
+    }
+    return ListTile(
+      leading: const Icon(Icons.workspace_premium, color: AppColors.accent),
+      title: const Text('Unlock Pro',
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+      subtitle: const Text(
+          'One-time purchase: Scale Running, Inversion Running, Jam Mode '
+          'and unlimited saved voicings',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      trailing: const Icon(Icons.chevron_right,
+          size: 16, color: AppColors.textMuted),
+      onTap: _unlockPro,
     );
   }
 
