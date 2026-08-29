@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
@@ -170,6 +171,22 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     await _load();
   }
 
+  /// Persist a drag. The list is written optimistically so the card stays
+  /// where the finger dropped it — reloading from prefs here would flash the
+  /// old order for a frame.
+  ///
+  /// Uses `onReorderItem`, which already accounts for the dragged card being
+  /// lifted out of the list, so [newIndex] needs no off-by-one correction.
+  Future<void> _reorder(int oldIndex, int newIndex) async {
+    if (newIndex == oldIndex) return;
+    setState(() {
+      final all = [..._voicings];
+      all.insert(newIndex, all.removeAt(oldIndex));
+      _voicings = all;
+    });
+    await _settings?.reorderVoicings(_voicings);
+  }
+
   // ---- Build -------------------------------------------------------------
 
   @override
@@ -251,11 +268,15 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     return Column(
       children: [
         Expanded(
-          child: ListView.separated(
+          child: ReorderableListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             itemCount: _voicings.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) => _buildCard(_voicings[i]),
+            onReorderItem: _reorder,
+            onReorderStart: (_) => HapticFeedback.lightImpact(),
+            // Only the grip drags, so tapping a card still opens the drill.
+            buildDefaultDragHandles: false,
+            proxyDecorator: _liftedCard,
+            itemBuilder: (context, i) => _buildCard(_voicings[i], i),
           ),
         ),
         _buildFooter(),
@@ -263,11 +284,14 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     );
   }
 
-  Widget _buildCard(VoicingSpec spec) {
+  Widget _buildCard(VoicingSpec spec, int index) {
     return InkWell(
+      key: ValueKey(spec.id),
       onTap: () => _openDrill(spec),
       borderRadius: BorderRadius.circular(16),
       child: Container(
+        // The gap lives on the card: ReorderableListView has no separator.
+        margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -313,9 +337,33 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
               ),
             ),
             _buildMenu(spec),
+            if (_voicings.length > 1)
+              ReorderableDragStartListener(
+                index: index,
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Icon(Icons.drag_handle, color: AppColors.textMuted),
+                ),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Keeps the dragged card on the app's dark surface — the default proxy
+  /// wraps the item in a themed [Material] that flashes light on lift.
+  Widget _liftedCard(Widget child, int index, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) => Material(
+        color: Colors.transparent,
+        elevation: Curves.easeInOut.transform(animation.value) * 8,
+        shadowColor: Colors.black54,
+        borderRadius: BorderRadius.circular(16),
+        child: child,
+      ),
+      child: child,
     );
   }
 

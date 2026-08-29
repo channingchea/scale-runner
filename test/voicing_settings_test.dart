@@ -80,6 +80,43 @@ void main() {
       expect((await settings.savedVoicings()).single.name, 'a|b "c" Ré ♭9');
     });
 
+    test('reordering round-trips through storage', () async {
+      await settings.upsertVoicing(spec('a', 'First', [0, 4, 7]));
+      await settings.upsertVoicing(spec('b', 'Second', [0, 3, 7]));
+      await settings.upsertVoicing(spec('c', 'Third', [0, 7, 16]));
+      final all = await settings.savedVoicings();
+      await settings.reorderVoicings([all[2], all[0], all[1]]);
+      expect(
+        [for (final v in await settings.savedVoicings()) v.name],
+        ['Third', 'First', 'Second'],
+      );
+    });
+
+    test('an edit after a reorder keeps the new position', () async {
+      await settings.upsertVoicing(spec('a', 'First', [0, 4, 7]));
+      await settings.upsertVoicing(spec('b', 'Second', [0, 3, 7]));
+      final all = await settings.savedVoicings();
+      await settings.reorderVoicings([all[1], all[0]]);
+      await settings.upsertVoicing(spec('a', 'Renamed', [0, 4, 7]));
+      expect(
+        [for (final v in await settings.savedVoicings()) v.name],
+        ['Second', 'Renamed'],
+      );
+    });
+
+    test('a delete after a reorder keeps the rest in order', () async {
+      await settings.upsertVoicing(spec('a', 'First', [0, 4, 7]));
+      await settings.upsertVoicing(spec('b', 'Second', [0, 3, 7]));
+      await settings.upsertVoicing(spec('c', 'Third', [0, 7, 16]));
+      final all = await settings.savedVoicings();
+      await settings.reorderVoicings([all[2], all[1], all[0]]);
+      await settings.deleteVoicing('b');
+      expect(
+        [for (final v in await settings.savedVoicings()) v.id],
+        ['c', 'a'],
+      );
+    });
+
     test('the free limit is 3', () {
       expect(QuizSettings.freeVoicingLimit, 3);
     });

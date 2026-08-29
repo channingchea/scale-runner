@@ -608,6 +608,11 @@ class QuizSettings {
     await _writeVoicings(all);
   }
 
+  /// Replace the stored order with [ordered]. The list order *is* the display
+  /// order, so reordering is just a rewrite — no sort key to keep in sync.
+  Future<void> reorderVoicings(List<VoicingSpec> ordered) =>
+      _writeVoicings(ordered);
+
   Future<void> deleteVoicing(String id) async {
     final all = await savedVoicings();
     all.removeWhere((v) => v.id == id);
