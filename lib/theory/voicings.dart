@@ -96,12 +96,26 @@ class VoicingSpec {
 
   final DateTime createdAt;
 
+  /// Folder this voicing is filed under, or null for Ungrouped. A voicing is
+  /// in at most one folder.
+  final String? folderId;
+
+  /// Index into `kVoicingTagColors`, or null for no colour tag.
+  final int? colorTag;
+
+  /// Ids of the text tags on this voicing. Labels live in the tag library, not
+  /// here, so renaming a tag updates every card carrying it.
+  final List<String> tagIds;
+
   const VoicingSpec({
     required this.id,
     required this.name,
     required this.rootPc,
     required this.offsets,
     required this.createdAt,
+    this.folderId,
+    this.colorTag,
+    this.tagIds = const [],
   });
 
   /// A new spec, stamping [createdAt] and deriving an [id] from it.
@@ -110,6 +124,9 @@ class VoicingSpec {
     required int rootPc,
     required List<int> offsets,
     DateTime? createdAt,
+    String? folderId,
+    int? colorTag,
+    List<String> tagIds = const [],
   }) {
     final at = createdAt ?? DateTime.now();
     return VoicingSpec(
@@ -118,6 +135,9 @@ class VoicingSpec {
       rootPc: rootPc % 12,
       offsets: offsets,
       createdAt: at,
+      folderId: folderId,
+      colorTag: colorTag,
+      tagIds: tagIds,
     );
   }
 
@@ -194,13 +214,28 @@ class VoicingSpec {
         _sameInts(sig, other.sig);
   }
 
-  VoicingSpec copyWith({String? name, int? rootPc, List<int>? offsets}) =>
+  /// A copy with fields replaced. [folderId] and [colorTag] are nullable
+  /// *values*, so clearing them needs the explicit [clearFolder] /
+  /// [clearColor] flags — passing null just means "leave it alone".
+  VoicingSpec copyWith({
+    String? name,
+    int? rootPc,
+    List<int>? offsets,
+    String? folderId,
+    bool clearFolder = false,
+    int? colorTag,
+    bool clearColor = false,
+    List<String>? tagIds,
+  }) =>
       VoicingSpec(
         id: id,
         name: name ?? this.name,
         rootPc: rootPc ?? this.rootPc,
         offsets: offsets ?? this.offsets,
         createdAt: createdAt,
+        folderId: clearFolder ? null : (folderId ?? this.folderId),
+        colorTag: clearColor ? null : (colorTag ?? this.colorTag),
+        tagIds: tagIds ?? this.tagIds,
       );
 
   /// JSON line for SharedPreferences. JSON rather than the pipe-delimited
@@ -211,6 +246,9 @@ class VoicingSpec {
         'root': rootPc,
         'offsets': offsets,
         'at': createdAt.microsecondsSinceEpoch,
+        if (folderId != null) 'folder': folderId,
+        if (colorTag != null) 'color': colorTag,
+        if (tagIds.isNotEmpty) 'tags': tagIds,
       });
 
   /// Inverse of [encode]. Returns null on anything malformed so one bad line
@@ -230,11 +268,97 @@ class VoicingSpec {
         rootPc: root % 12,
         offsets: offsets,
         createdAt: DateTime.fromMicrosecondsSinceEpoch(at),
+        folderId: m['folder'] as String?,
+        colorTag: m['color'] as int?,
+        tagIds: [
+          for (final t in (m['tags'] as List? ?? const [])) t as String,
+        ],
       );
     } catch (_) {
       return null;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Folders and tags
+// ---------------------------------------------------------------------------
+
+/// A named record with a stable id, ordered by its place in the stored list.
+///
+/// Folders and text tags hold exactly the same data and differ only in what
+/// they mean, so they share one class rather than two identical ones. Both are
+/// referenced from [VoicingSpec] by id, never by name — that's what makes a
+/// rename update every card at once.
+class VoicingLabel {
+  final String id;
+  final String name;
+
+  const VoicingLabel(this.id, this.name);
+
+  /// A new record with an id derived from the clock. [prefix] keeps folder and
+  /// tag ids visually distinct in stored JSON ('f' / 't').
+  factory VoicingLabel.create(String name, {String prefix = 'f'}) =>
+      VoicingLabel('$prefix${DateTime.now().microsecondsSinceEpoch}', name);
+
+  VoicingLabel renamed(String newName) => VoicingLabel(id, newName);
+
+  String encode() => jsonEncode({'id': id, 'name': name});
+
+  /// Null on anything malformed, so one bad line can't take the list down.
+  static VoicingLabel? decode(String line) {
+    try {
+      final m = jsonDecode(line);
+      if (m is! Map) return null;
+      final id = m['id'] as String;
+      if (id.isEmpty) return null;
+      return VoicingLabel(id, m['name'] as String);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// A folder in the Voicings list. A voicing is in at most one.
+typedef VoicingFolder = VoicingLabel;
+
+/// A reusable text tag. Many per voicing.
+typedef VoicingTag = VoicingLabel;
+
+/// [all] regrouped into display order: each folder's members in their existing
+/// relative order, folder by folder, then everything unfiled.
+///
+/// The flat list is the one source of order, so grouping it this way is what
+/// makes a section a contiguous slice — which is what lets a drag inside a
+/// section be a plain move inside this list.
+///
+/// A voicing pointing at a folder that no longer exists falls through to
+/// Ungrouped rather than vanishing.
+List<VoicingSpec> groupVoicings(
+    List<VoicingSpec> all, List<VoicingFolder> folders) {
+  final ids = {for (final f in folders) f.id};
+  return [
+    for (final f in folders) ...all.where((v) => v.folderId == f.id),
+    ...all.where((v) => v.folderId == null || !ids.contains(v.folderId)),
+  ];
+}
+
+/// Whether [spec] matches a search box holding [query]: a case-insensitive
+/// substring of its name, of any of its [tagLabels], or of [folderName].
+///
+/// Labels are passed in rather than looked up, because ids only become names
+/// through the tag library the caller owns.
+bool voicingMatchesQuery(
+  VoicingSpec spec,
+  String query, {
+  List<String> tagLabels = const [],
+  String? folderName,
+}) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  if (spec.name.toLowerCase().contains(q)) return true;
+  if (tagLabels.any((l) => l.toLowerCase().contains(q))) return true;
+  return folderName != null && folderName.toLowerCase().contains(q);
 }
 
 // ---------------------------------------------------------------------------

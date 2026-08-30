@@ -108,6 +108,9 @@ class QuizSettings {
   static const _voicingIncrementKey = 'voicing_increment';
   static const _voicingShowDotsKey = 'voicing_show_dots';
   static const _voicingShowFormulaKey = 'voicing_show_formula';
+  static const _voicingFoldersKey = 'voicing_folders';
+  static const _voicingTagsKey = 'voicing_tags';
+  static const _voicingExpandedKey = 'voicing_expanded_folders';
 
   // Latency configuration.
   static String _latencyKeyFor(String deviceName) => 'latency_$deviceName';
@@ -622,6 +625,114 @@ class QuizSettings {
   Future<void> _writeVoicings(List<VoicingSpec> all) async {
     await _prefs.setStringList(
         _voicingCustomsKey, [for (final v in all) v.encode()]);
+  }
+
+  // ---- Voicing folders ----
+  //
+  // Folders hold no voicings of their own: membership lives on the spec as
+  // [VoicingSpec.folderId], and the single flat voicing list stays the one
+  // source of order. Sections are derived by grouping that list, so there is
+  // no per-folder order to drift out of sync.
+
+  /// Folders in display order. A line that fails to decode is skipped.
+  Future<List<VoicingFolder>> voicingFolders() async {
+    final stored = await _prefs.getStringList(_voicingFoldersKey);
+    if (stored == null) return [];
+    return [for (final line in stored) ?VoicingFolder.decode(line)];
+  }
+
+  /// Add [folder], or replace the one already holding its id (a rename).
+  Future<void> upsertVoicingFolder(VoicingFolder folder) async {
+    final all = await voicingFolders();
+    final i = all.indexWhere((f) => f.id == folder.id);
+    if (i >= 0) {
+      all[i] = folder;
+    } else {
+      all.add(folder);
+    }
+    await _writeVoicingFolders(all);
+  }
+
+  /// Remove the folder and turn its members loose into Ungrouped. Deleting a
+  /// folder never deletes a voicing.
+  Future<void> deleteVoicingFolder(String id) async {
+    final all = await voicingFolders();
+    all.removeWhere((f) => f.id == id);
+    await _writeVoicingFolders(all);
+    final voicings = await savedVoicings();
+    var touched = false;
+    for (var i = 0; i < voicings.length; i++) {
+      if (voicings[i].folderId == id) {
+        voicings[i] = voicings[i].copyWith(clearFolder: true);
+        touched = true;
+      }
+    }
+    if (touched) await _writeVoicings(voicings);
+  }
+
+  Future<void> reorderVoicingFolders(List<VoicingFolder> ordered) =>
+      _writeVoicingFolders(ordered);
+
+  Future<void> _writeVoicingFolders(List<VoicingFolder> all) async {
+    await _prefs.setStringList(
+        _voicingFoldersKey, [for (final f in all) f.encode()]);
+  }
+
+  /// Ids of the folders currently expanded in the list. Absent means "all
+  /// expanded" — a user who has never collapsed one sees everything.
+  Future<Set<String>?> expandedVoicingFolders() async {
+    final stored = await _prefs.getStringList(_voicingExpandedKey);
+    return stored?.toSet();
+  }
+
+  Future<void> setExpandedVoicingFolders(Set<String> ids) async {
+    await _prefs.setStringList(_voicingExpandedKey, ids.toList());
+  }
+
+  // ---- Voicing tags ----
+  //
+  // One library of text tags, referenced from specs by id. Labels live here
+  // and nowhere else, so a rename lands on every card at once.
+
+  Future<List<VoicingTag>> voicingTags() async {
+    final stored = await _prefs.getStringList(_voicingTagsKey);
+    if (stored == null) return [];
+    return [for (final line in stored) ?VoicingTag.decode(line)];
+  }
+
+  /// Add [tag], or replace the one already holding its id (a rename).
+  Future<void> upsertVoicingTag(VoicingTag tag) async {
+    final all = await voicingTags();
+    final i = all.indexWhere((t) => t.id == tag.id);
+    if (i >= 0) {
+      all[i] = tag;
+    } else {
+      all.add(tag);
+    }
+    await _writeVoicingTags(all);
+  }
+
+  /// Remove the tag from the library *and* from every voicing carrying it.
+  Future<void> deleteVoicingTag(String id) async {
+    final all = await voicingTags();
+    all.removeWhere((t) => t.id == id);
+    await _writeVoicingTags(all);
+    final voicings = await savedVoicings();
+    var touched = false;
+    for (var i = 0; i < voicings.length; i++) {
+      if (voicings[i].tagIds.contains(id)) {
+        voicings[i] = voicings[i].copyWith(
+          tagIds: [for (final t in voicings[i].tagIds) if (t != id) t],
+        );
+        touched = true;
+      }
+    }
+    if (touched) await _writeVoicings(voicings);
+  }
+
+  Future<void> _writeVoicingTags(List<VoicingTag> all) async {
+    await _prefs.setStringList(
+        _voicingTagsKey, [for (final t in all) t.encode()]);
   }
 
   /// Pitch class (0–11) the drill starts in. Default 0 (C).

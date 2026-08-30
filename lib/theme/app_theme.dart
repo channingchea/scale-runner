@@ -42,6 +42,33 @@ class AppColors {
   static const Color felt = Color(0xFF8E3B46); // felt rail above the keys
 }
 
+/// The fixed palette a voicing's colour tag picks from — eight hues that stay
+/// legible as a thin stripe on [AppColors.surface]. Stored on the spec as an
+/// index, so re-tuning a swatch here restyles every card already using it.
+const List<Color> kVoicingTagColors = [
+  Color(0xFF36D6C3), // teal
+  Color(0xFF4ADE80), // green
+  Color(0xFFF5A524), // amber
+  Color(0xFFFB923C), // orange
+  Color(0xFFF4717F), // rose
+  Color(0xFFF472B6), // pink
+  Color(0xFFA78BFA), // violet
+  Color(0xFF60A5FA), // blue
+];
+
+/// Spoken names for [kVoicingTagColors], same order — used for the swatch
+/// tooltips and semantics labels.
+const List<String> kVoicingTagColorNames = [
+  'Teal',
+  'Green',
+  'Amber',
+  'Orange',
+  'Rose',
+  'Pink',
+  'Violet',
+  'Blue',
+];
+
 class AppTheme {
   AppTheme._();
 

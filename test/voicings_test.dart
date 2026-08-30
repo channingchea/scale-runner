@@ -155,6 +155,47 @@ void main() {
         isNull,
       );
     });
+    test('folder, colour and tags survive a round trip', () {
+      final s = VoicingSpec.create(
+        name: 'Filed',
+        rootPc: 0,
+        offsets: drop2,
+        createdAt: DateTime.utc(2026),
+        folderId: 'f1',
+        colorTag: 3,
+        tagIds: ['t1', 't2'],
+      );
+      final back = VoicingSpec.decode(s.encode())!;
+      expect(back.folderId, 'f1');
+      expect(back.colorTag, 3);
+      expect(back.tagIds, ['t1', 't2']);
+    });
+    test('a line saved before folders existed still decodes', () {
+      // Exactly what v1 wrote: no folder, colour or tags keys at all.
+      const legacy = '{"id":"v1","name":"Old","root":0,'
+          '"offsets":[-1,4,7,12],"at":1786417473791000}';
+      final back = VoicingSpec.decode(legacy)!;
+      expect(back.name, 'Old');
+      expect(back.offsets, drop2);
+      expect(back.folderId, isNull);
+      expect(back.colorTag, isNull);
+      expect(back.tagIds, isEmpty);
+    });
+    test('copyWith clears folder and colour only when told to', () {
+      final s = VoicingSpec.create(
+        name: 'Filed',
+        rootPc: 0,
+        offsets: drop2,
+        folderId: 'f1',
+        colorTag: 3,
+      );
+      // A bare copy keeps them — passing null means "leave it alone".
+      expect(s.copyWith(name: 'Renamed').folderId, 'f1');
+      expect(s.copyWith(name: 'Renamed').colorTag, 3);
+      expect(s.copyWith(clearFolder: true).folderId, isNull);
+      expect(s.copyWith(clearColor: true).colorTag, isNull);
+      expect(s.copyWith(clearFolder: true).colorTag, 3); // independent
+    });
     test('fromNotes captures a played shape', () {
       final s = VoicingSpec.fromNotes(
         name: 'Drop 2',
@@ -164,6 +205,26 @@ void main() {
       expect(s.offsets, drop2);
       expect(s.formula, '7-3-5-1');
       expect(s.id, isNotEmpty);
+    });
+  });
+
+  group('folders and tags share one record type', () {
+    test('round-trips, and ids stay distinct by prefix', () {
+      final folder = VoicingFolder.create('Ballads');
+      final tag = VoicingTag.create('drop 2', prefix: 't');
+      expect(VoicingLabel.decode(folder.encode())!.name, 'Ballads');
+      expect(VoicingLabel.decode(tag.encode())!.id, startsWith('t'));
+      expect(folder.id, startsWith('f'));
+    });
+    test('renaming keeps the id, which is what tags are stored by', () {
+      final tag = VoicingTag.create('drop2', prefix: 't');
+      expect(tag.renamed('Drop 2').id, tag.id);
+      expect(tag.renamed('Drop 2').name, 'Drop 2');
+    });
+    test('malformed lines decode to null instead of throwing', () {
+      expect(VoicingLabel.decode('not json'), isNull);
+      expect(VoicingLabel.decode('{}'), isNull);
+      expect(VoicingLabel.decode('{"id":"","name":"x"}'), isNull);
     });
   });
 
@@ -343,6 +404,79 @@ void main() {
     });
     test('a different note count never matches', () {
       expect(spec(openTriad).sameShapeAs(spec([0, 7])), isFalse);
+    });
+  });
+
+  group('groupVoicings — the flat list sliced into sections', () {
+    VoicingSpec at(String id, {String? folder}) => VoicingSpec(
+          id: id,
+          name: id,
+          rootPc: 0,
+          offsets: drop2,
+          createdAt: DateTime.fromMicrosecondsSinceEpoch(0),
+          folderId: folder,
+        );
+    const a = VoicingFolder('f1', 'Ballads');
+    const b = VoicingFolder('f2', 'Blues');
+
+    test('folder by folder, in folder order, then everything unfiled', () {
+      final grouped = groupVoicings(
+        [at('1', folder: 'f2'), at('2'), at('3', folder: 'f1'), at('4')],
+        [a, b],
+      );
+      expect([for (final v in grouped) v.id], ['3', '1', '2', '4']);
+    });
+    test('relative order inside a folder survives grouping', () {
+      final grouped = groupVoicings(
+        [at('1', folder: 'f1'), at('2'), at('3', folder: 'f1')],
+        [a],
+      );
+      expect([for (final v in grouped) v.id], ['1', '3', '2']);
+    });
+    test('a voicing pointing at a deleted folder lands in Ungrouped', () {
+      final grouped = groupVoicings([at('1', folder: 'gone'), at('2')], [a]);
+      expect([for (final v in grouped) v.id], ['1', '2']);
+      // Nothing is lost, and nothing claims to be in a folder that is gone.
+      expect(grouped.length, 2);
+    });
+    test('no folders is the identity', () {
+      final all = [at('1'), at('2')];
+      expect([for (final v in groupVoicings(all, const [])) v.id], ['1', '2']);
+    });
+    test('every voicing appears exactly once', () {
+      final all = [
+        at('1', folder: 'f1'),
+        at('2', folder: 'f2'),
+        at('3'),
+        at('4', folder: 'f1'),
+      ];
+      final grouped = groupVoicings(all, [a, b]);
+      expect(grouped.length, all.length);
+      expect({for (final v in grouped) v.id}.length, all.length);
+    });
+  });
+
+  group('voicingMatchesQuery — the search box', () {
+    final s = spec(drop2, name: 'Maj7 drop 2');
+
+    test('an empty query matches everything', () {
+      expect(voicingMatchesQuery(s, '   '), isTrue);
+    });
+    test('matches the name, case-insensitively and mid-word', () {
+      expect(voicingMatchesQuery(s, 'DROP'), isTrue);
+      expect(voicingMatchesQuery(s, 'aj7'), isTrue);
+    });
+    test('matches a tag label', () {
+      expect(voicingMatchesQuery(s, 'ballad', tagLabels: ['Ballads']), isTrue);
+    });
+    test('matches the folder name', () {
+      expect(voicingMatchesQuery(s, 'blues', folderName: 'Blues'), isTrue);
+    });
+    test('no match anywhere is a miss', () {
+      expect(
+        voicingMatchesQuery(s, 'sus', tagLabels: ['Ballads'], folderName: 'Blues'),
+        isFalse,
+      );
     });
   });
 }

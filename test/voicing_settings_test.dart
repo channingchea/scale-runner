@@ -165,6 +165,88 @@ void main() {
     });
   });
 
+  group('voicing folders', () {
+    test('a fresh install has none, and nothing is expanded-or-not yet', () async {
+      expect(await settings.voicingFolders(), isEmpty);
+      expect(await settings.expandedVoicingFolders(), isNull);
+    });
+
+    test('upsert adds, then renames in place', () async {
+      final f = VoicingFolder.create('Ballads');
+      await settings.upsertVoicingFolder(f);
+      await settings.upsertVoicingFolder(f.renamed('Standards'));
+      final all = await settings.voicingFolders();
+      expect(all.length, 1);
+      expect(all.single.name, 'Standards');
+      expect(all.single.id, f.id);
+    });
+
+    test('deleting a folder frees its voicings instead of deleting them',
+        () async {
+      final f = VoicingFolder.create('Ballads');
+      await settings.upsertVoicingFolder(f);
+      await settings.upsertVoicing(
+          spec('a', 'In it', [0, 4, 7]).copyWith(folderId: f.id));
+      await settings.upsertVoicing(spec('b', 'Loose', [0, 3, 7]));
+
+      await settings.deleteVoicingFolder(f.id);
+
+      expect(await settings.voicingFolders(), isEmpty);
+      final saved = await settings.savedVoicings();
+      expect(saved.length, 2); // nothing lost
+      expect(saved.every((v) => v.folderId == null), isTrue);
+    });
+
+    test('reorder rewrites display order', () async {
+      final a = VoicingFolder.create('A');
+      final b = VoicingFolder.create('B');
+      await settings.upsertVoicingFolder(a);
+      await settings.upsertVoicingFolder(b);
+      await settings.reorderVoicingFolders([b, a]);
+      expect((await settings.voicingFolders()).map((f) => f.name), ['B', 'A']);
+    });
+
+    test('expansion state round-trips', () async {
+      await settings.setExpandedVoicingFolders({'f1', 'f2'});
+      expect(await settings.expandedVoicingFolders(), {'f1', 'f2'});
+      await settings.setExpandedVoicingFolders({});
+      expect(await settings.expandedVoicingFolders(), isEmpty); // not null
+    });
+  });
+
+  group('voicing tags', () {
+    test('renaming a tag needs no change to the voicings carrying it',
+        () async {
+      final t = VoicingTag.create('drop2', prefix: 't');
+      await settings.upsertVoicingTag(t);
+      await settings
+          .upsertVoicing(spec('a', 'Tagged', [0, 4, 7]).copyWith(tagIds: [t.id]));
+
+      await settings.upsertVoicingTag(t.renamed('Drop 2'));
+
+      expect((await settings.voicingTags()).single.name, 'Drop 2');
+      expect((await settings.savedVoicings()).single.tagIds, [t.id]);
+    });
+
+    test('deleting a tag strips it from every voicing', () async {
+      final keep = VoicingTag.create('keep', prefix: 't');
+      final drop = VoicingTag.create('drop', prefix: 't');
+      await settings.upsertVoicingTag(keep);
+      await settings.upsertVoicingTag(drop);
+      await settings.upsertVoicing(spec('a', 'Both', [0, 4, 7])
+          .copyWith(tagIds: [keep.id, drop.id]));
+      await settings.upsertVoicing(
+          spec('b', 'Neither', [0, 3, 7]));
+
+      await settings.deleteVoicingTag(drop.id);
+
+      expect((await settings.voicingTags()).single.id, keep.id);
+      final saved = await settings.savedVoicings();
+      expect(saved.first.tagIds, [keep.id]);
+      expect(saved.last.tagIds, isEmpty);
+    });
+  });
+
   // The drill screen ends a session with `recordWeeklySession(0, 0)`. These
   // pin down why that one call is what makes "counts as practice, never
   // scored" work without a single change to the social layer.
