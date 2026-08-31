@@ -391,60 +391,21 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     await _load();
   }
 
-  /// Folder order gets its own sheet rather than a drag handle in the list:
-  /// dragging a header inside a scroll view that already drags cards is a
-  /// nest of reorderables, and this is one tap away.
-  Future<void> _reorderFoldersSheet() async {
-    final working = [..._folders];
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: StatefulBuilder(
-          builder: (context, setSheet) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _SheetTitle('Reorder folders'),
-              Flexible(
-                child: ReorderableListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: working.length,
-                  onReorderItem: (o, n) =>
-                      setSheet(() => working.insert(n, working.removeAt(o))),
-                  itemBuilder: (context, i) => ListTile(
-                    key: ValueKey(working[i].id),
-                    leading: const Icon(Icons.folder_outlined,
-                        color: AppColors.textSecondary),
-                    title: Text(working[i].name),
-                    trailing: ReorderableDragStartListener(
-                      index: i,
-                      child: const Icon(Icons.drag_handle,
-                          color: AppColors.textMuted),
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Done'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    await _settings?.reorderVoicingFolders(working);
-    await _load();
+  /// Persist a folder drag. Both lists are written optimistically so the
+  /// section stays where the finger dropped it: the folder order itself, and
+  /// the voicings regrouped behind it — the flat list is sliced by folder
+  /// order, so moving a folder moves its slice with it.
+  Future<void> _reorderFolders(int oldIndex, int newIndex) async {
+    if (newIndex == oldIndex) return;
+    final folders = [..._folders];
+    folders.insert(newIndex, folders.removeAt(oldIndex));
+    final regrouped = groupVoicings(_voicings, folders);
+    setState(() {
+      _folders = folders;
+      _voicings = regrouped;
+    });
+    await _settings?.reorderVoicingFolders(folders);
+    await _settings?.reorderVoicings(regrouped);
   }
 
   // ---- Tags --------------------------------------------------------------
@@ -753,17 +714,6 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
               tooltip: 'New folder',
               onPressed: _newFolder,
             ),
-            if (_folders.length > 1)
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                color: AppColors.surfaceHigh,
-                tooltip: 'List options',
-                onSelected: (_) => _reorderFoldersSheet(),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                      value: 'folders', child: Text('Reorder folders')),
-                ],
-              ),
           ],
         ],
       ),
@@ -1005,39 +955,73 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     ];
   }
 
+  /// Two levels of dragging in one scroll view: the outer list reorders whole
+  /// folder sections by their header grip, and each section carries its own
+  /// inner list for its cards. A card's grip sits inside the inner list and a
+  /// header's grip doesn't, so each one binds to the reorderable it belongs to.
+  ///
+  /// Ungrouped is deliberately outside the outer list — it is not a folder and
+  /// always sits last.
   List<Widget> _sectionSlivers() {
-    final slivers = <Widget>[];
-    var start = 0;
-    for (final f in _folders) {
-      final items = _voicings.where((v) => v.folderId == f.id).toList();
-      slivers.add(SliverToBoxAdapter(
-        child: _buildFolderHeader(f, items.length),
-      ));
-      if (_isExpanded(f.id)) slivers.add(_sectionList(items, start));
-      start += items.length;
-    }
-
-    final loose = _voicings.sublist(start);
-    if (_folders.isEmpty) {
-      // No folders: the list looks exactly as it did before this feature.
-      slivers.add(_sectionList(loose, start));
-    } else {
-      slivers.add(SliverToBoxAdapter(
-        child: _buildFolderHeader(null, loose.length),
-      ));
-      if (_isExpanded(_ungroupedId)) slivers.add(_sectionList(loose, start));
-    }
-    slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 8)));
-    return slivers;
+    final loose = _voicings.where((v) => !_folderIds.contains(v.folderId));
+    return [
+      SliverReorderableList(
+        itemCount: _folders.length,
+        onReorderItem: _reorderFolders,
+        onReorderStart: (_) => HapticFeedback.lightImpact(),
+        proxyDecorator: _liftedCard,
+        itemBuilder: (context, i) => _buildFolderSection(_folders[i], i),
+      ),
+      SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // No folders: the list looks exactly as it did before this feature.
+            if (_folders.isNotEmpty) _buildFolderHeader(null, loose.length),
+            if (_folders.isEmpty || _isExpanded(_ungroupedId))
+              _sectionList(loose.toList(), _voicings.length - loose.length),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ];
   }
 
+  Set<String> get _folderIds => {for (final f in _folders) f.id};
+
+  Widget _buildFolderSection(VoicingFolder folder, int index) {
+    final items = _voicings.where((v) => v.folderId == folder.id).toList();
+    // Where this folder's slice starts in the flat list: everything filed under
+    // the folders above it.
+    var start = 0;
+    for (final f in _folders) {
+      if (f.id == folder.id) break;
+      start += _voicings.where((v) => v.folderId == f.id).length;
+    }
+    return Column(
+      key: ValueKey(folder.id),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildFolderHeader(folder, items.length, dragIndex: index),
+        if (_isExpanded(folder.id)) _sectionList(items, start),
+      ],
+    );
+  }
+
+  /// A section's cards. `shrinkWrap` + no physics because this list is a child
+  /// of the page's scroll view, not a scroller of its own.
   Widget _sectionList(List<VoicingSpec> items, int start) {
-    return SliverPadding(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      sliver: SliverReorderableList(
+      child: ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         itemCount: items.length,
         onReorderItem: (o, n) => _reorder(start, o, n),
         onReorderStart: (_) => HapticFeedback.lightImpact(),
+        // Only the grip drags, so tapping a card still opens the drill.
+        buildDefaultDragHandles: false,
         proxyDecorator: _liftedCard,
         itemBuilder: (context, i) =>
             _buildCard(items[i], i, draggable: items.length > 1),
@@ -1045,8 +1029,11 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
     );
   }
 
-  /// [folder] null means the Ungrouped section.
-  Widget _buildFolderHeader(VoicingFolder? folder, int count) {
+  /// [folder] null means the Ungrouped section. [dragIndex] is the folder's
+  /// place in the outer reorderable list; null for Ungrouped, which doesn't
+  /// move.
+  Widget _buildFolderHeader(VoicingFolder? folder, int count,
+      {int? dragIndex}) {
     final id = folder?.id ?? _ungroupedId;
     final expanded = _isExpanded(id);
     return InkWell(
@@ -1115,6 +1102,15 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
               )
             else
               const SizedBox(width: 8),
+            if (folder != null && dragIndex != null && _folders.length > 1)
+              ReorderableDragStartListener(
+                index: dragIndex,
+                key: ValueKey('folder-grip-${folder.id}'),
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 2, right: 6),
+                  child: Icon(Icons.drag_handle, color: AppColors.textMuted),
+                ),
+              ),
           ],
         ),
       ),

@@ -54,8 +54,13 @@ labels and folder names. All free — no Pro gating.
       "Ungrouped" + "New folder…", with a check on the current one
 - [x] Reorder handler maps a section-local `(oldIndex, newIndex)` back to an index in the
       flat list before calling `reorderVoicings`
-- [x] Folder reordering: "Reorder folders" item in the app-bar overflow opens a sheet with a
-      plain `ReorderableListView` of folder names → `reorderVoicingFolders`
+- [x] ~~Folder reordering via an app-bar sheet~~ — **superseded 2026-08-30**: folder headers
+      now carry their own grip and drag in place, like the cards. Folders are one outer
+      `SliverReorderableList` whose items are `header + that folder's card list`; each
+      section's cards live in an inner shrink-wrapped `ReorderableListView`. A card's grip is
+      inside the inner list and a header's is not, so each binds to the right list. Dragging a
+      folder regroups the flat voicing list behind it, so a section's cards move with it.
+      Ungrouped sits outside the outer list and stays last. The sheet is gone.
 - [x] Ungrouped section renders headerless when no folders exist, so a user who never makes
       one sees today's list exactly
 
@@ -93,9 +98,10 @@ labels and folder names. All free — no Pro gating.
       with no folder/color/tags)
 
 ## Open questions / risks
-- **Nested reorderables**: the folder-reorder sheet sidesteps the technical risk of dragging
-  a folder header inside a scroll view that also drags cards. Direct header dragging is
-  doable but more fragile.
+- ~~**Nested reorderables**~~ — resolved 2026-08-30. The nesting works and is covered by
+  widget tests that perform real drags at both levels. One thing to watch on hardware: a
+  dragged folder's proxy includes its cards, so dragging an expanded folder holding many
+  voicings lifts a tall block. Collapse it first if that feels unwieldy.
 - **Free limit + folders**: the "3 of 3 free" footer stays a global count, not per folder.
 - **Tag library growth**: no auto-pruning of tags no voicing uses — they stay until deleted
   manually.

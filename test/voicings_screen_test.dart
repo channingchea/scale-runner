@@ -174,4 +174,68 @@ void main() {
     expect(left.length, 1);
     expect(left.single.folderId, isNull);
   });
+
+  testWidgets('folder headers drag to reorder, and take their cards along',
+      (t) async {
+    await settings.upsertVoicingFolder(const VoicingFolder('f1', 'Ballads'));
+    await settings.upsertVoicingFolder(const VoicingFolder('f2', 'Blues'));
+    await settings.upsertVoicing(_spec('1', 'Maj7 drop 2', folderId: 'f1'));
+    await settings.upsertVoicing(_spec('2', 'Shell voicing', folderId: 'f2'));
+    await _pump(t);
+
+    // Ballads sits above Blues to start with.
+    expect(t.getTopLeft(find.text('Ballads')).dy,
+        lessThan(t.getTopLeft(find.text('Blues')).dy));
+
+    final grip = find.byKey(const ValueKey('folder-grip-f2'));
+    expect(grip, findsOneWidget);
+    final gesture = await t.startGesture(t.getCenter(grip));
+    await t.pump(const Duration(milliseconds: 100));
+    // Up past the Ballads section, in steps, so the list tracks the drag.
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(0, -20));
+      await t.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await t.pumpAndSettle();
+
+    // On screen and in storage, Blues is now first.
+    expect(t.getTopLeft(find.text('Blues')).dy,
+        lessThan(t.getTopLeft(find.text('Ballads')).dy));
+    expect([for (final f in await settings.voicingFolders()) f.id],
+        ['f2', 'f1']);
+    // The flat voicing list is re-sliced to match, so each card stays with its
+    // folder rather than drifting into the one above.
+    expect([for (final v in await settings.savedVoicings()) v.id], ['2', '1']);
+  });
+
+  testWidgets('a card still drags inside its own folder', (t) async {
+    await settings.upsertVoicingFolder(const VoicingFolder('f1', 'Ballads'));
+    await settings.upsertVoicing(_spec('1', 'First', folderId: 'f1'));
+    await settings.upsertVoicing(_spec('2', 'Second', folderId: 'f1'));
+    await _pump(t);
+
+    expect(t.getTopLeft(find.text('First')).dy,
+        lessThan(t.getTopLeft(find.text('Second')).dy));
+
+    // The second card's grip: two cards, so both are draggable.
+    final grips = find.byIcon(Icons.drag_handle);
+    final gesture = await t.startGesture(t.getCenter(grips.last));
+    await t.pump(const Duration(milliseconds: 100));
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(0, -20));
+      await t.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await t.pumpAndSettle();
+
+    expect([for (final v in await settings.savedVoicings()) v.id], ['2', '1']);
+  });
+
+  testWidgets('one folder shows no grip — nothing to reorder', (t) async {
+    await settings.upsertVoicingFolder(const VoicingFolder('f1', 'Ballads'));
+    await settings.upsertVoicing(_spec('1', 'Maj7 drop 2', folderId: 'f1'));
+    await _pump(t);
+    expect(find.byKey(const ValueKey('folder-grip-f1')), findsNothing);
+  });
 }
