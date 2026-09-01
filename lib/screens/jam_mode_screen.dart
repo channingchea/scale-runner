@@ -425,7 +425,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
           Icons.check_circle,
         ),
         JamResult.close => (
-          'Close — a bit off',
+          'Close, a bit off',
           AppColors.accent2,
           Icons.timelapse,
         ),
@@ -434,7 +434,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
       // Freestyle has no fixed prompt on screen, so name the chord that was
       // actually judged; Prompted already shows it continuously above.
       final judged = c.freestyle ? c.lastJudgedChord : null;
-      final full = judged != null ? '$label — ${judged.name}' : label;
+      final full = judged != null ? '$label · ${judged.name}' : label;
       return _pill(full, color, icon, filled: true);
     }
     final matched = c.active && c.currentChordMatched;
@@ -491,11 +491,11 @@ class _JamModeScreenState extends State<JamModeScreen> {
           Icons.radio_button_unchecked, filled: false);
     }
     if (!match.enabled) {
-      return _pill('${match.chord.name} — family off', AppColors.wrong,
+      return _pill('${match.chord.name} · family off', AppColors.wrong,
           Icons.block, filled: true);
     }
     if (c.liveChordIsRepeat) {
-      return _pill('${match.chord.name} — repeat', AppColors.accent2,
+      return _pill('${match.chord.name} · repeat', AppColors.accent2,
           Icons.warning_amber_rounded, filled: true);
     }
     return _pill(

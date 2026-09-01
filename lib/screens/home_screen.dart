@@ -219,8 +219,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _showTrialToast(String modeLabel, int left) {
     if (!mounted) return;
     final msg = left == 1
-        ? 'Last free $modeLabel session — enjoy!'
-        : '$left free $modeLabel sessions left — enjoy!';
+        ? 'Last free $modeLabel session, enjoy!'
+        : '$left free $modeLabel sessions left, enjoy!';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 

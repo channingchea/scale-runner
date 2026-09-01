@@ -324,7 +324,7 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
           ? 'The folder will be removed.'
           : 'The folder will be removed. '
               '${count == 1 ? 'Its voicing moves' : 'Its $count voicings move'} '
-              'to Ungrouped — nothing is deleted.',
+              'to Ungrouped. Nothing is deleted.',
       action: 'Delete folder',
     );
     if (confirmed != true) return;
@@ -482,7 +482,7 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
                       const Padding(
                         padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
                         child: Text(
-                          'No tags yet — type one below.',
+                          'No tags yet. Type one below.',
                           style: TextStyle(
                               color: AppColors.textMuted, fontSize: 13),
                         ),

@@ -147,7 +147,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
         backgroundColor: AppColors.surface,
         title: const Text('You already have this shape'),
         content: Text(
-          '"${clash.name}" is the same voicing — ${clash.rootName} '
+          '"${clash.name}" is the same voicing: ${clash.rootName} '
           '${clash.formula}. Save this one as well?',
         ),
         actions: [
@@ -210,9 +210,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
           'Play the voicing',
           widget.midi.isConnected
               ? 'Play the chord on your keyboard, or tap the keys below. Notes '
-                  'stay put once played — play one again to remove it.'
+                  'stay put once played. Play one again to remove it.'
               : 'Tap the keys below to build the shape. Notes stay put once '
-                  'tapped — tap again to remove.',
+                  'tapped. Tap again to remove.',
           _buildNoteReadout(),
         ),
         const SizedBox(height: 22),
@@ -220,7 +220,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
           '2',
           'Which note is the root?',
           ready
-              ? 'Defaults to the lowest note. Pick any of the twelve — a '
+              ? 'Defaults to the lowest note. Pick any of the twelve, since a '
                   'rootless voicing has no root in it at all.'
               : 'Play at least two notes first.',
           ready ? _buildRootChips() : const SizedBox.shrink(),

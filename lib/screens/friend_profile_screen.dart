@@ -208,7 +208,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget _trend(List<WeeklyStat> weeks) {
     if (weeks.isEmpty) {
       return const Text(
-        'No history yet — a week of practice shows up here.',
+        'No history yet. A week of practice shows up here.',
         style: TextStyle(
             color: AppColors.textMuted,
             fontSize: 13,

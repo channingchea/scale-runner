@@ -80,7 +80,7 @@ class _PaywallSheetState extends State<PaywallSheet> {
   /// unavailable (e.g. keys not set yet, or running on simulator).
   String get _priceLabel {
     if (_packages.isEmpty) return 'Unlock Pro';
-    return 'Unlock Pro — ${_packages.first.storeProduct.priceString}';
+    return 'Unlock Pro for ${_packages.first.storeProduct.priceString}';
   }
 
   Future<void> _buy() async {
@@ -161,14 +161,14 @@ class _PaywallSheetState extends State<PaywallSheet> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'A one-time unlock — yours forever, on all your devices.',
+              'A one-time unlock, yours forever, on all your devices.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
             ),
             const SizedBox(height: 22),
             const _Perk(
               icon: Icons.directions_run,
               title: 'Three timed drills, unlimited',
-              subtitle: 'Scale Running, Inversion Running and Jam Mode — '
+              subtitle: 'Scale Running, Inversion Running and Jam Mode, '
                   'in time, key by key, as often as you like.',
             ),
             const _Perk(

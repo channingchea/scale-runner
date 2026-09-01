@@ -68,7 +68,7 @@ class JamChord {
   });
 
   /// Prompt label shown on screen, e.g. "ii — Dm7".
-  String get prompt => '$roman — $name';
+  String get prompt => '$roman · $name';
 
   /// Quality key for per-quality scoring, e.g. "maj", "min", "dim", "maj7",
   /// "dom7", "m7", "m7b5", "maj9", "9", "m9", "m9b5", "sus2", "sus4". It's the

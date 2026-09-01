@@ -311,8 +311,8 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     final info = <Widget>[
       Text(
         c.chordsEnabled
-            ? 'Hold the chord, run the mode — one note per beat'
-            : 'Run the scale — one note per beat',
+            ? 'Hold the chord, run the mode: one note per beat'
+            : 'Run the scale: one note per beat',
         textAlign: TextAlign.center,
         style: TextStyle(
           color: AppColors.textSecondary,

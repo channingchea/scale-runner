@@ -73,7 +73,7 @@ class WelcomeSheet extends StatelessWidget {
                 Icons.visibility,
                 'Read the prompt',
                 'You\'ll see a name like "G Major" and its formula, e.g. '
-                    '1-2-3-4-5-6-7. Each number is a scale degree — they '
+                    '1-2-3-4-5-6-7. Each number is a scale degree, and they '
                     'light up as you play the right notes.',
               ),
               _row(

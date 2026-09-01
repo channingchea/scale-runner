@@ -59,7 +59,7 @@ class BeatDebugOverlay extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                lines.isEmpty ? '[beat debug on — play to log]' : lines.join('\n'),
+                lines.isEmpty ? '[beat debug on: play to log]' : lines.join('\n'),
                 style: const TextStyle(
                   color: Color(0xFF7CFC00),
                   fontSize: 9,

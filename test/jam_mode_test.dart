@@ -18,20 +18,20 @@ void main() {
       final c = k.chord(1, JamFamily.triad);
       expect(c.pitchClasses, {0, 4, 7});
       expect(c.name, 'C');
-      expect(c.prompt, 'I — C');
+      expect(c.prompt, 'I · C');
       expect(c.formula, '1-3-5');
     });
     test('ii = Dm', () {
       final c = k.chord(2, JamFamily.triad);
       expect(c.pitchClasses, {2, 5, 9});
       expect(c.name, 'Dm');
-      expect(c.prompt, 'ii — Dm');
+      expect(c.prompt, 'ii · Dm');
     });
     test('vii° = Bdim', () {
       final c = k.chord(7, JamFamily.triad);
       expect(c.pitchClasses, {11, 2, 5});
       expect(c.name, 'Bdim');
-      expect(c.prompt, 'vii° — Bdim');
+      expect(c.prompt, 'vii° · Bdim');
       expect(c.formula, '1-b3-b5');
     });
   });

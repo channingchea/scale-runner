@@ -61,7 +61,7 @@ void main() {
       final ii = key.openChord(2);
       expect(ii.roman, 'ii');
       expect(ii.name, 'D');
-      expect(ii.prompt, 'ii — D');
+      expect(ii.prompt, 'ii · D');
       expect(ii.pitchClasses, key.stackPcs(2));
     });
 

@@ -160,7 +160,7 @@ class _VoicingRunSettingsSheetState extends State<VoicingRunSettingsSheet> {
                           title: 'Target dots',
                           subtitle:
                               'Mark the exact keys to play. Turn off once you '
-                              'can find the shape yourself — that\'s the point '
+                              'can find the shape yourself, since that\'s the point '
                               'of the mode.',
                         ),
                         _switchTile(

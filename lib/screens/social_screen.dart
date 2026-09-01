@@ -152,7 +152,7 @@ class _SocialScreenState extends State<SocialScreen> {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Only your display name, avatar, and streak are shared — and only '
+          'Only your display name, avatar, and streak are shared, and only '
           'with friends you invite.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -385,7 +385,7 @@ class _SocialScreenState extends State<SocialScreen> {
         child: Column(
           children: [
             const Text(
-              'No friends yet — the leaderboard starts with your first '
+              'No friends yet. The leaderboard starts with your first '
               'invite.',
               style: TextStyle(
                   color: AppColors.textMuted,

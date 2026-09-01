@@ -58,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Turning on needs OS permission; if denied, stay off with a hint.
       final granted = await NotificationService.instance.requestPermission();
       if (!granted) {
-        _snack('Notifications are blocked — allow them for Scale Runner in '
+        _snack('Notifications are blocked. Allow them for Scale Runner in '
             'your device settings first.');
         return;
       }
@@ -201,7 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: Text('Scale Runner Pro',
             style: TextStyle(
                 color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
-        subtitle: Text('Unlocked — thanks for the support!',
+        subtitle: Text('Unlocked. Thanks for the support!',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
       );
     }
@@ -348,8 +348,8 @@ class _PrivacyPolicyScreen extends StatelessWidget {
                   '  • Your display name and a generated avatar\n'
                   '  • Your practice streak (current, best, total days)\n'
                   '  • Your friend connections, invites, and applause\n\n'
-                  'This data is visible only to friends you connect with — '
-                  'there is no public profile or global leaderboard. You can '
+                  'This data is visible only to friends you connect with. '
+                  'There is no public profile or global leaderboard. You can '
                   'delete your account at any time from the Friends screen, '
                   'which permanently removes all of it from our servers. '
                   'Without an account, nothing ever leaves your device.'),

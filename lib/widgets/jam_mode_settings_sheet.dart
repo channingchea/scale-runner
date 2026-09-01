@@ -151,7 +151,7 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
                           padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
                           child: Text(
                             'Prompted shows a specific chord each bar. '
-                            'Freestyle lets you play any diatonic chord — '
+                            'Freestyle lets you play any diatonic chord, '
                             'just don\'t play the same scale degree twice in '
                             'a row.',
                             style: TextStyle(
@@ -179,7 +179,7 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
                           title: 'Any chord tones',
                           subtitle:
                               'Play any voicing of 3 or more notes built on '
-                              'the prompted root — 3rds, 7ths, 9ths, sus '
+                              'the prompted root: 3rds, 7ths, 9ths, sus '
                               'tones, doubled freely. The lowest note must '
                               'be the root. The family picks below are '
                               'ignored while this is on.',

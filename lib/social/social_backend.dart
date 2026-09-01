@@ -305,7 +305,7 @@ class SupabaseSocialBackend implements SocialBackend {
     return switch (map['error']) {
       'invalid_code' => 'This invite link isn\'t valid.',
       'already_used' => 'This invite was already used.',
-      'expired' => 'This invite has expired — ask for a new one.',
+      'expired' => 'This invite has expired. Ask for a new one.',
       'own_invite' => 'That\'s your own invite link!',
       _ => 'Couldn\'t accept the invite. Try again.',
     };

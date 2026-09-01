@@ -49,7 +49,7 @@ class StreakMilestoneSheet extends StatelessWidget {
       iconGradient: true,
       title: '$streak-day streak!',
       body: streak >= 30
-          ? 'That\'s serious dedication — $streak days of practice in a row.'
+          ? 'That\'s serious dedication: $streak days of practice in a row.'
           : 'You\'ve practiced $streak days in a row. Keep it rolling!',
       primary: FilledButton.icon(
         icon: const Icon(Icons.ios_share, size: 18),
@@ -89,7 +89,7 @@ class StreakFrozenSheet extends StatelessWidget {
       icon: Icons.ac_unit,
       title: 'Streak saved',
       body: 'You missed a day, but your Pro streak freeze kept your '
-          '$streak-day streak alive. You get one freeze per week — '
+          '$streak-day streak alive. You get one freeze per week, so '
           'practice today to stay safe.',
       secondaryLabel: 'Nice',
     );
@@ -120,7 +120,7 @@ class StreakLostSheet extends StatelessWidget {
       iconMuted: true,
       title: 'Your $lostStreak-day streak ended',
       body: 'Life happens. Pro members get a weekly streak freeze that '
-          'would have saved it — and every practice mode, forever.',
+          'would have saved it, and every practice mode, forever.',
       primary: FilledButton(
         onPressed: () async {
           final navigator = Navigator.of(context);

@@ -149,7 +149,7 @@ class NotificationService {
     await _plugin.zonedSchedule(
       id: _atRiskId,
       title: '🔥 ${streak.currentStreak}-day streak on the line',
-      body: 'It ends at midnight — one quick session saves it.',
+      body: 'It ends at midnight. One quick session saves it.',
       scheduledDate: when,
       notificationDetails: _details(),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -163,8 +163,8 @@ class NotificationService {
       id: _winBackId,
       title: 'Your scales miss you 🎹',
       body: streak >= 2
-          ? 'You built a $streak-day streak once — five minutes starts the next one.'
-          : 'Pick up where you left off — five minutes counts.',
+          ? 'You built a $streak-day streak once. Five minutes starts the next one.'
+          : 'Pick up where you left off. Five minutes counts.',
       scheduledDate:
           _nextInstanceOf(hour, minute).add(const Duration(days: _winBackDays)),
       notificationDetails: _details(),

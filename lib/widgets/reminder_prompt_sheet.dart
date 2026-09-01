@@ -52,7 +52,7 @@ class _ReminderPromptSheetState extends State<ReminderPromptSheet> {
       await NotificationService.instance.resync();
     } else {
       messenger.showSnackBar(const SnackBar(
-        content: Text('Notifications are off — you can enable reminders '
+        content: Text('Notifications are off. You can enable reminders '
             'anytime in Settings.'),
       ));
     }
