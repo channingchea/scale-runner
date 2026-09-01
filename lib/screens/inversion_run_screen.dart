@@ -45,6 +45,10 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   bool _showFormula = true;
   final NotePlayer _notes = NotePlayer();
 
+  /// Live MIDI setup changes, so the latency correction can be
+  /// re-resolved when a keyboard connects after this screen opened.
+  StreamSubscription<String>? _setupSub;
+
   /// The transposing keyboard needs ~2 octaves: root → octave-root + the maj7
   /// above it (≈23 semitones). Two octaves (24 semitones span) covers it.
   static const int _keyboardOctaves = 2;
@@ -76,6 +80,23 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     _metronome = metronome;
     _settings = settings;
     await _rebuildController();
+    // The correction is looked up per connected device. A keyboard still
+    // auto-reconnecting when this screen opened would otherwise leave the
+    // whole session judged at 0 ms, so re-resolve on every setup change.
+    _setupSub = widget.midi.onSetupChanged.listen((_) => _refreshLatency());
+  }
+
+  /// Re-resolve the input-latency correction for whatever is connected now
+  /// and apply it live. Deliberately does NOT rebuild the controller: that
+  /// would reset a run in progress. Both the judge and the metronome flash
+  /// read the field per press, so a late update takes effect immediately.
+  Future<void> _refreshLatency() async {
+    final settings = _settings;
+    if (settings == null) return;
+    final latency = await resolveInputLatencyMs(widget.midi, settings);
+    if (!mounted) return;
+    _controller?.inputLatencyMs = latency;
+    _metronome?.inputLatencyMs = latency;
   }
 
   Future<void> _rebuildController() async {
@@ -127,6 +148,10 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     final m = _metronome;
     if (c == null || m == null) return;
     if (c.phase == InversionPhase.idle) {
+      // Not every reconnect emits a setup change (app resume and launch
+      // restore don't), so catch up here too — by Start the keyboard is
+      // connected in practice, and the count-in bar covers the async read.
+      unawaited(_refreshLatency());
       c.start();
       if (_tempoMode) m.start();
     } else {
@@ -179,6 +204,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   @override
   void dispose() {
     WakelockPlus.disable();
+    _setupSub?.cancel();
     _controller?.dispose();
     _metronome?.dispose();
     _notes.dispose();

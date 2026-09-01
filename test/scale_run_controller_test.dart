@@ -633,5 +633,50 @@ void main() {
       expect(c.resultAt(0), isNotNull);
       expect(c.notesClose + c.notesOnBeat, 1);
     });
+
+    test('the last beat of a bar is rescued across the bar rollover', () {
+      var since = 0;
+      final c = makeController(chords: false, sinceBeat: () => since);
+      countIn(c); // beat 0
+      // Let the whole bar go unplayed: every beat settles missed, and the 8th
+      // tick settles beat 7 and immediately rolls the bar over.
+      for (var i = 0; i < 8; i++) {
+        c.onBeat();
+      }
+      expect(c.notesMissed, 8);
+      // Beat 7's note (C) arrives 100ms into the new bar - within graceMs of
+      // the tick it was aimed at. Before the rollover fix this scored as a
+      // wrong note on top of the miss, every single bar.
+      since = 100;
+      c.pressKey(notes[7]); // C, an octave up
+      expect(c.notesMissed, 7, reason: 'the miss is undone');
+      expect(c.notesClose, 1);
+      expect(c.notesWrong, 0, reason: 'not also punished as a wrong pitch');
+      expect(c.streak, 1);
+      expect(c.resultAt(7), isNull,
+          reason: "the new bar's beat 7 slot is left alone");
+    });
+
+    test('grace expires after one beat, not at the end of the bar', () {
+      var since = 0;
+      final c = makeController(chords: false, sinceBeat: () => since);
+      countIn(c);
+      c.pressKey(notes[0]); // beat 0 on time
+      c.releaseKey(notes[0]);
+      c.onBeat(); // -> beat 1
+      c.onBeat(); // -> beat 2, beat 1 (D) missed + grace open
+      // Play beats 2 and 3 correctly so nothing re-arms grace.
+      c.pressKey(notes[2]);
+      c.releaseKey(notes[2]);
+      c.onBeat(); // -> beat 3
+      c.pressKey(notes[3]);
+      c.releaseKey(notes[3]);
+      c.onBeat(); // -> beat 4, three beats past the miss
+      since = 100;
+      c.pressKey(notes[1]); // D, still inside graceMs of beat 4's tick
+      expect(c.resultAt(1), NoteResult.missed,
+          reason: 'grace only covers the beat immediately after the miss');
+      expect(c.notesWrong, 1);
+    });
   });
 }

@@ -25,6 +25,12 @@ class _LatencyCalibrationScreenState extends State<LatencyCalibrationScreen> {
   StreamSubscription? _midiSub;
   final List<int> _offsets = [];
   int? _medianOffset;
+
+  /// Tightest and widest tap of the run. A single median hides a wandering
+  /// offset; showing the range lets the player see whether their keyboard's
+  /// delay is actually stable enough for one constant to correct.
+  int? _minOffset;
+  int? _maxOffset;
   bool _saving = false;
 
   @override
@@ -72,6 +78,8 @@ class _LatencyCalibrationScreenState extends State<LatencyCalibrationScreen> {
         // on-beat presses from reading late.
         final sorted = List<int>.from(_offsets)..sort();
         _medianOffset = sorted[sorted.length ~/ 2];
+        _minOffset = sorted.first;
+        _maxOffset = sorted.last;
         _metronome.stop(); // Stop metronome when done
       }
     });
@@ -91,6 +99,8 @@ class _LatencyCalibrationScreenState extends State<LatencyCalibrationScreen> {
     setState(() {
       _offsets.clear();
       _medianOffset = null;
+      _minOffset = null;
+      _maxOffset = null;
     });
     _metronome.start();
   }
@@ -150,6 +160,15 @@ class _LatencyCalibrationScreenState extends State<LatencyCalibrationScreen> {
                     color: colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your 8 taps ranged $_minOffset\u2013${_maxOffset}ms.'
+                  '${(_maxOffset! - _minOffset!) > 60 ? ' That spread is wide '
+                      'enough that one fixed correction can only get you close '
+                      '\u2014 retry somewhere quieter, or with wired audio.' : ''}',
+                  style: textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),
                 const Spacer(),

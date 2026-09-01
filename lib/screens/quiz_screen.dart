@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../audio/note_player.dart';
 import '../theme/app_theme.dart';
+import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
@@ -37,6 +40,11 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _beatIndicator = true;
   bool _noteSound = true;
   final NotePlayer _notes = NotePlayer();
+
+  /// Live MIDI setup changes, so the beat indicator's latency correction can
+  /// be re-resolved when a keyboard connects after this screen opened.
+  StreamSubscription<String>? _setupSub;
+  bool _wasTicking = false;
 
   // Score carried across controller rebuilds (e.g. when the user changes
   // which scales/chords are active). Loaded from storage in [_bootstrap] and
@@ -72,6 +80,19 @@ class _QuizScreenState extends State<QuizScreen> {
           ..onBeatMs = difficulty.onBeatMs
           ..closeMs = difficulty.closeMs
           ..hapticEnabled = hapticEnabled;
+    // The beat indicator judges a press against the tick exactly like the
+    // drill modes do, so it needs the same input-latency correction. Without
+    // it every press on a BLE keyboard reads late by the delivery delay.
+    _settings = settings;
+    await _refreshLatency();
+    _setupSub = widget.midi.onSetupChanged.listen((_) => _refreshLatency());
+    // No Start button here (the metronome bar owns its own toggle), so catch a
+    // silent auto-reconnect the moment the click actually starts.
+    _metronome!.addListener(() {
+      final ticking = _metronome?.running ?? false;
+      if (ticking && !_wasTicking) unawaited(_refreshLatency());
+      _wasTicking = ticking;
+    });
     await _rebuildController(settings);
     if (mounted) {
       setState(() {
@@ -83,6 +104,16 @@ class _QuizScreenState extends State<QuizScreen> {
         _noteSound = noteSound;
       });
     }
+  }
+
+  /// Re-resolve the input-latency correction for whatever is connected now.
+  /// [MetronomeController.registerHit] reads the field per press, so a late
+  /// update takes effect immediately.
+  Future<void> _refreshLatency() async {
+    final settings = _settings;
+    final metronome = _metronome;
+    if (settings == null || metronome == null) return;
+    metronome.inputLatencyMs = await resolveInputLatencyMs(widget.midi, settings);
   }
 
   /// (Re)build the controller from the currently-enabled formulas.
@@ -179,6 +210,7 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void dispose() {
     WakelockPlus.disable();
+    _setupSub?.cancel();
     _controller?.dispose();
     _metronome?.dispose();
     _notes.dispose();

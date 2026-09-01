@@ -181,11 +181,21 @@ class ScaleRunController extends ChangeNotifier {
   NoteResult? _pendingNext; // early hit waiting for the next tick
   bool _chordMissedThisBar = false;
 
-  // Backward-grace: the most recently missed beat, rescuable until the bar
-  // rolls over or another beat is settled as missed.
+  // Backward-grace: the most recently missed beat, rescuable only during the
+  // single beat that follows it — including across a bar rollover, so the last
+  // note of every bar gets the same second chance as beats 1-7. Adjacency is
+  // tracked with [_absBeat] rather than the step index, which the rollover
+  // bumps.
   int? _graceBeat;
-  int? _graceStepIndex;
+  int? _graceAbsBeat;
   int? _graceExpectedPc;
+
+  /// The grace beat's bar has since ended, so its slot in [_results] now
+  /// belongs to the new bar: a rescue scores the stats but leaves the dots be.
+  bool _graceBarRolled = false;
+
+  /// Beats elapsed since the downbeat; unlike [_beatIndex] it never wraps.
+  int _absBeat = 0;
 
   final Set<int> _held = {};
   final Set<int> _wrongFlash = {};
@@ -319,6 +329,7 @@ class ScaleRunController extends ChangeNotifier {
     _rebuildSteps();
     _stepIndex = 0;
     _beatIndex = 0;
+    _absBeat = 0;
     _keyRepsDone = 0;
     _keysCompleted = 0;
     _results.fillRange(0, 8, null);
@@ -404,13 +415,16 @@ class ScaleRunController extends ChangeNotifier {
         streak = 0;
       }
     }
+    _absBeat++;
     _beatIndex++;
     if (_beatIndex >= 8) {
       // Bar complete -> next chord; past the progression -> next pass or key.
       _beatIndex = 0;
       _chordMissedThisBar = false;
       _results.fillRange(0, 8, null);
-      _clearGrace(); // grace never survives past its own bar
+      // Grace survives the rollover (the last beat of a bar deserves the same
+      // second chance), but _results has been refilled, so mark it slot-less.
+      if (_graceBeat != null) _graceBarRolled = true;
       _stepIndex++;
       if (_stepIndex >= _steps.length) {
         _keyRepsDone++;
@@ -506,11 +520,11 @@ class ScaleRunController extends ChangeNotifier {
     if (!early &&
         !t.wrapped &&
         _graceBeat != null &&
-        _graceStepIndex == _stepIndex &&
+        _absBeat == _graceAbsBeat! + 1 &&
         pc == _graceExpectedPc &&
         pc != expectedPc &&
         _judge.withinGrace(offBy) &&
-        _results[_graceBeat!] == NoteResult.missed) {
+        (_graceBarRolled || _results[_graceBeat!] == NoteResult.missed)) {
       _rescueGraceBeat(midiNote, offBy);
       return;
     }
@@ -568,7 +582,7 @@ class ScaleRunController extends ChangeNotifier {
     final NoteResult result = _judge.verdictFor(offBy) == BeatVerdict.onBeat
         ? NoteResult.onBeat
         : NoteResult.close;
-    _results[beat] = result;
+    if (!_graceBarRolled) _results[beat] = result;
     notesMissed--;
     if (result == NoteResult.onBeat) {
       notesOnBeat++;
@@ -585,14 +599,16 @@ class ScaleRunController extends ChangeNotifier {
 
   void _armGrace(int beat) {
     _graceBeat = beat;
-    _graceStepIndex = _stepIndex;
+    _graceAbsBeat = _absBeat;
     _graceExpectedPc = _expectedPcAt(beat);
+    _graceBarRolled = false;
   }
 
   void _clearGrace() {
     _graceBeat = null;
-    _graceStepIndex = null;
+    _graceAbsBeat = null;
     _graceExpectedPc = null;
+    _graceBarRolled = false;
   }
 
   /// Judge a press in the final count-in window against beat 0 of bar 1.

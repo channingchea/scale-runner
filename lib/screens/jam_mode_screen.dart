@@ -45,6 +45,10 @@ class _JamModeScreenState extends State<JamModeScreen> {
   bool _countInNumbers = true;
   final NotePlayer _notes = NotePlayer();
 
+  /// Live MIDI setup changes, so the latency correction can be
+  /// re-resolved when a keyboard connects after this screen opened.
+  StreamSubscription<String>? _setupSub;
+
   /// This mode widens the keyboard to 2.5 octaves (C3–F5, MIDI 48–77) so a full
   /// maj9 voicing fits in one span. Other modes keep the global 2-octave anchor.
   static const int _keyboardLowMidi = 48; // C3
@@ -74,6 +78,23 @@ class _JamModeScreenState extends State<JamModeScreen> {
     _metronome = metronome;
     _settings = settings;
     await _rebuildController();
+    // The correction is looked up per connected device. A keyboard still
+    // auto-reconnecting when this screen opened would otherwise leave the
+    // whole session judged at 0 ms, so re-resolve on every setup change.
+    _setupSub = widget.midi.onSetupChanged.listen((_) => _refreshLatency());
+  }
+
+  /// Re-resolve the input-latency correction for whatever is connected now
+  /// and apply it live. Deliberately does NOT rebuild the controller: that
+  /// would reset a run in progress. Both the judge and the metronome flash
+  /// read the field per press, so a late update takes effect immediately.
+  Future<void> _refreshLatency() async {
+    final settings = _settings;
+    if (settings == null) return;
+    final latency = await resolveInputLatencyMs(widget.midi, settings);
+    if (!mounted) return;
+    _controller?.inputLatencyMs = latency;
+    _metronome?.inputLatencyMs = latency;
   }
 
   Future<void> _rebuildController() async {
@@ -132,6 +153,10 @@ class _JamModeScreenState extends State<JamModeScreen> {
     final m = _metronome;
     if (c == null || m == null) return;
     if (c.phase == JamPhase.idle) {
+      // Not every reconnect emits a setup change (app resume and launch
+      // restore don't), so catch up here too — by Start the keyboard is
+      // connected in practice, and the count-in bar covers the async read.
+      unawaited(_refreshLatency());
       c.resetScores();
       c.start();
       m.start();
@@ -187,6 +212,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
   @override
   void dispose() {
     WakelockPlus.disable();
+    _setupSub?.cancel();
     _controller?.dispose();
     _metronome?.dispose();
     _notes.dispose();
