@@ -32,6 +32,10 @@ void main() {
     app.main();
     await _pumpFor(tester, const Duration(seconds: 8));
 
+    // A fresh install opens the welcome sheet over the home screen, which is
+    // exactly the screen the home shot is meant to show. Dismiss it first.
+    await _dismissWelcome(tester);
+
     await _shot(tester, 'home');
 
     await _openFromHome(tester, 'Scales');
@@ -54,6 +58,15 @@ void main() {
     await _shot(tester, 'settings');
     await _back(tester);
   });
+}
+
+/// Taps the welcome sheet's dismiss button if it is showing. No-op once the
+/// intro has been seen, so the harness works on a fresh and a used install.
+Future<void> _dismissWelcome(WidgetTester tester) async {
+  final cta = find.text("Let's play");
+  if (cta.evaluate().isEmpty) return;
+  await tester.tap(cta.first);
+  await _pumpFor(tester, const Duration(seconds: 3));
 }
 
 /// pumpAndSettle is unsafe here — the app has looping animations (the flashing
