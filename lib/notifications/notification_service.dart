@@ -34,7 +34,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   bool _inited = false;
 
-  bool get _supported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  bool get _supported =>
+      !kIsWeb && (Platform.isIOS || Platform.isAndroid || Platform.isMacOS);
 
   Future<void> init() async {
     if (_inited || !_supported) return;
@@ -55,6 +56,11 @@ class NotificationService {
           requestBadgePermission: false,
           requestSoundPermission: false,
         ),
+        macOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
       ),
     );
     _inited = true;
@@ -68,6 +74,13 @@ class NotificationService {
       final ios = _plugin.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
       return await ios?.requestPermissions(
+              alert: true, badge: true, sound: true) ??
+          false;
+    }
+    if (Platform.isMacOS) {
+      final macos = _plugin.resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin>();
+      return await macos?.requestPermissions(
               alert: true, badge: true, sound: true) ??
           false;
     }
@@ -169,6 +182,7 @@ class NotificationService {
           priority: Priority.defaultPriority,
         ),
         iOS: DarwinNotificationDetails(),
+        macOS: DarwinNotificationDetails(),
       );
 
   tz.TZDateTime _todayAt(int hour, int minute) {

@@ -7,6 +7,7 @@ import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
 import '../theory/voicings.dart';
+import '../ui/responsive.dart';
 import '../widgets/voicing_thumbnail.dart';
 import 'voicing_capture_screen.dart';
 import 'voicing_drill_screen.dart';
@@ -486,6 +487,16 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
                               color: AppColors.textMuted, fontSize: 13),
                         ),
                       ),
+                    if (suggestions.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+                        child: Text(
+                          'Long-press or right-click a tag to rename or '
+                          'delete it everywhere.',
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 12),
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Wrap(
@@ -717,12 +728,14 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
           ],
         ],
       ),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _voicings.isEmpty
-                ? _buildEmpty()
-                : _buildList(),
+      body: ContentColumn(
+        child: SafeArea(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _voicings.isEmpty
+                  ? _buildEmpty()
+                  : _buildList(),
+        ),
       ),
     );
   }
@@ -1379,6 +1392,9 @@ class _TagChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onLongPress: onLongPress,
+      // Right-click is the mouse equivalent — long-press works with a mouse
+      // held down, but nobody discovers it that way.
+      onSecondaryTap: onLongPress,
       child: FilterChip(
         selected: selected,
         showCheckmark: false,

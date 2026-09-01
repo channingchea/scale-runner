@@ -119,10 +119,17 @@ List<MidiNoteEvent> parseMidiBytes(Uint8List bytes, {int? lastStatus}) {
 class MidiService {
   final MidiCommand _midi = MidiCommand();
 
-  /// Native bridge to Apple's CABTMIDICentralViewController (iOS only).
+  /// Native bridge to Apple's Bluetooth-MIDI pairing UI. One channel name for
+  /// both Apple platforms; the native side picks the right class
+  /// (CABTMIDICentralViewController on iOS, CABTLEMIDIWindowController on
+  /// macOS — see ios/Runner/SceneDelegate.swift and
+  /// macos/Runner/MainFlutterWindow.swift).
   static const _ble = MethodChannel('scale_runner/ble_midi');
 
-  bool get _isIOS => !kIsWeb && Platform.isIOS;
+  /// True where a native pairing UI is wired up. Everywhere else we fall back
+  /// to the plugin's headless central.
+  bool get _hasNativeBlePairing =>
+      !kIsWeb && (Platform.isIOS || Platform.isMacOS);
 
   final _noteController = StreamController<MidiNoteEvent>.broadcast();
   final _rawController = StreamController<String>.broadcast();
@@ -255,15 +262,15 @@ class MidiService {
     return list ?? <MidiDevice>[];
   }
 
-  /// Open Apple's Bluetooth-MIDI central UI (iOS) to pair a BLE keyboard.
+  /// Open Apple's Bluetooth-MIDI pairing UI to pair a BLE keyboard.
   ///
-  /// On iOS we present Apple's own CABTMIDICentralViewController (the sheet
-  /// GarageBand uses) via a native channel — flutter_midi_command's
+  /// On iOS and macOS we present Apple's own pairing UI (the one GarageBand
+  /// uses) via a native channel — flutter_midi_command's
   /// startBluetoothCentral() only scans headlessly and rarely surfaces the
   /// device. On other platforms we fall back to the plugin's central.
   /// May throw - caller should guard.
   Future<void> startBluetoothCentral() async {
-    if (_isIOS) {
+    if (_hasNativeBlePairing) {
       await _midi.startBluetoothCentral(); // power on the central first
       await _ble.invokeMethod('showBluetoothPairing');
     } else {

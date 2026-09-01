@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../social/social_models.dart';
 import '../social/social_service.dart';
 import '../theme/app_theme.dart';
+import '../ui/responsive.dart';
 import '../widgets/social_widgets.dart';
 
 /// A friend's profile: streak stats plus weekly progress (days practiced,
@@ -45,35 +46,42 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         title: Text(entry.profile.displayName),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _load,
+          ),
+          IconButton(
             icon: const Icon(Icons.person_remove_outlined),
             tooltip: 'Remove friend',
             onPressed: () => _confirmRemove(entry),
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                children: [
-                  _header(entry),
-                  const SizedBox(height: 20),
-                  const SocialSectionHeader('Streak'),
-                  SocialCard(child: _streakRow(entry)),
-                  const SizedBox(height: 20),
-                  const SocialSectionHeader('Mode scores'),
-                  SocialCard(child: _modeScores(_detail!.modeStats)),
-                  const SizedBox(height: 20),
-                  const SocialSectionHeader('This week'),
-                  SocialCard(child: _thisWeek(_detail!.thisWeek)),
-                  const SizedBox(height: 20),
-                  const SocialSectionHeader('Days practiced per week'),
-                  SocialCard(child: _trend(_detail!.trend)),
-                ],
+      body: ContentColumn(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                  children: [
+                    _header(entry),
+                    const SizedBox(height: 20),
+                    const SocialSectionHeader('Streak'),
+                    SocialCard(child: _streakRow(entry)),
+                    const SizedBox(height: 20),
+                    const SocialSectionHeader('Mode scores'),
+                    SocialCard(child: _modeScores(_detail!.modeStats)),
+                    const SizedBox(height: 20),
+                    const SocialSectionHeader('This week'),
+                    SocialCard(child: _thisWeek(_detail!.thisWeek)),
+                    const SizedBox(height: 20),
+                    const SocialSectionHeader('Days practiced per week'),
+                    SocialCard(child: _trend(_detail!.trend)),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

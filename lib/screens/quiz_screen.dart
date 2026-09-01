@@ -1,6 +1,3 @@
-import 'dart:io' show Platform;
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -11,6 +8,7 @@ import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/quiz_settings_sheet.dart';
@@ -45,9 +43,6 @@ class _QuizScreenState extends State<QuizScreen> {
   // persisted on every win, so it survives navigation and app restarts.
   int _carryScore = 0;
   int _carryBestStreak = 0;
-
-  /// True on phones/tablets (used for sizing tweaks).
-  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
@@ -218,10 +213,11 @@ class _QuizScreenState extends State<QuizScreen> {
                     final bodyHeight = MediaQuery.of(context).size.height;
                     // Compact mode: landscape PHONES only. Portrait phones and
                     // tablets are tall enough for the regular layout.
-                    final compact = _isMobile && bodyHeight < 500;
+                    final compact = isCompactLayout(bodyHeight);
+                    final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
                     final keyboardHeight = compact
-                        ? (bodyHeight * 0.40).clamp(120.0, 240.0)
-                        : (bodyHeight * 0.46).clamp(140.0, 240.0);
+                        ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                        : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                     return SafeArea(
                       bottom: false,
                       child: Column(
@@ -383,7 +379,7 @@ class _QuizScreenState extends State<QuizScreen> {
                           c.promptLabel,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: compact ? 28 : (_isMobile ? 36 : 40),
+                            fontSize: compact ? 28 : (isDesktopPlatform ? 40 : 36),
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                             height: 1.1,

@@ -6,6 +6,7 @@ import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
+import '../ui/responsive.dart';
 import '../widgets/timing_difficulty_selector.dart';
 
 /// The app's real settings screen: global sound + timing controls, Restore
@@ -121,52 +122,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = _settings;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: settings == null
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                _sectionHeader('Sound'),
-                _switchTile(
-                  value: _noteSound,
-                  onChanged: _toggleNoteSound,
-                  title: 'Note sound',
-                  subtitle: 'Play a piano tone when you press a key '
-                      '(turn off if your keyboard has its own sound)',
-                ),
-                _switchTile(
-                  value: _tickHaptic,
-                  onChanged: _toggleTickHaptic,
-                  title: 'Haptic tick',
-                  subtitle: 'Buzz the device on every metronome beat',
-                ),
-                _sectionDivider(),
-                _sectionHeader('Reminders'),
-                _switchTile(
-                  value: _reminders,
-                  onChanged: _toggleReminders,
-                  title: 'Practice reminders',
-                  subtitle: 'A daily nudge at your chosen time, plus a '
-                      'heads-up when your streak is about to break',
-                ),
-                if (_reminders) _reminderTimeTile(),
-                _sectionDivider(),
-                _sectionHeader('Timing'),
-                TimingDifficultySelector(
-                  value: _difficulty,
-                  settings: settings,
-                  onChanged: (d) => setState(() => _difficulty = d),
-                ),
-                _sectionDivider(),
-                _sectionHeader('Purchases'),
-                _unlockProTile(),
-                _restoreTile(),
-                _sectionDivider(),
-                _sectionHeader('About'),
-                _privacyTile(),
-                _versionTile(),
-              ],
-            ),
+      body: ContentColumn(
+        child: settings == null
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  _sectionHeader('Sound'),
+                  _switchTile(
+                    value: _noteSound,
+                    onChanged: _toggleNoteSound,
+                    title: 'Note sound',
+                    subtitle: 'Play a piano tone when you press a key '
+                        '(turn off if your keyboard has its own sound)',
+                  ),
+                  // Desktop has no haptics — HapticFeedback is a silent no-op
+                  // there, so don't offer a switch that does nothing.
+                  if (hasHaptics)
+                    _switchTile(
+                      value: _tickHaptic,
+                      onChanged: _toggleTickHaptic,
+                      title: 'Haptic tick',
+                      subtitle: 'Buzz the device on every metronome beat',
+                    ),
+                  _sectionDivider(),
+                  _sectionHeader('Reminders'),
+                  _switchTile(
+                    value: _reminders,
+                    onChanged: _toggleReminders,
+                    title: 'Practice reminders',
+                    subtitle: 'A daily nudge at your chosen time, plus a '
+                        'heads-up when your streak is about to break',
+                  ),
+                  if (_reminders) _reminderTimeTile(),
+                  _sectionDivider(),
+                  _sectionHeader('Timing'),
+                  TimingDifficultySelector(
+                    value: _difficulty,
+                    settings: settings,
+                    onChanged: (d) => setState(() => _difficulty = d),
+                  ),
+                  _sectionDivider(),
+                  _sectionHeader('Purchases'),
+                  _unlockProTile(),
+                  _restoreTile(),
+                  _sectionDivider(),
+                  _sectionHeader('About'),
+                  _privacyTile(),
+                  _versionTile(),
+                ],
+              ),
+      ),
     );
   }
 
@@ -308,64 +314,66 @@ class _PrivacyPolicyScreen extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Privacy Policy')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Privacy Policy',
-                style: textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text('Last updated: July 14, 2026',
-                style: textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textSecondary)),
-            const SizedBox(height: 20),
-            _body(context,
-                'Scale Runner works fully offline and collects no personal '
-                'data unless you choose to sign in for the optional social '
-                'features. The app uses no analytics, advertising, or '
-                'tracking services of any kind.'),
-            _section(context, 'Data Stored on Your Device'),
-            _body(context,
-                'The app stores the following information locally on your '
-                'device only, using standard app preferences storage:\n\n'
-                '  • Practice statistics (score, best streak)\n'
-                '  • App settings (sound preference, onboarding status)\n\n'
-                'This information is deleted automatically when you uninstall '
-                'the app.'),
-            _section(context, 'Optional Account & Social Features'),
-            _body(context,
-                'If you sign in (with Apple or Google) to use the friends '
-                'features, the following is stored on our servers (Supabase):\n\n'
-                '  • Your display name and a generated avatar\n'
-                '  • Your practice streak (current, best, total days)\n'
-                '  • Your friend connections, invites, and applause\n\n'
-                'This data is visible only to friends you connect with — '
-                'there is no public profile or global leaderboard. You can '
-                'delete your account at any time from the Friends screen, '
-                'which permanently removes all of it from our servers. '
-                'Without an account, nothing ever leaves your device.'),
-            _section(context, 'MIDI and Bluetooth'),
-            _body(context,
-                'If you connect a MIDI keyboard via USB or Bluetooth, the app '
-                'communicates directly with that device to receive note input. '
-                'No information about your device, your playing, or your MIDI '
-                'hardware is transmitted anywhere.'),
-            _section(context, 'Children\'s Privacy'),
-            _body(context,
-                'Scale Runner does not knowingly collect any information from '
-                'anyone, including children under 13, because it does not '
-                'collect information at all.'),
-            _section(context, 'Changes to This Policy'),
-            _body(context,
-                'If this policy changes, the updated version will be posted '
-                'here with a revised "Last updated" date.'),
-            _section(context, 'Contact'),
-            _body(context,
-                'Questions about this privacy policy? Contact us at:\n'
-                'channing@c1gnus.com'),
-          ],
+      body: ContentColumn(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Privacy Policy',
+                  style: textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text('Last updated: July 14, 2026',
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 20),
+              _body(context,
+                  'Scale Runner works fully offline and collects no personal '
+                  'data unless you choose to sign in for the optional social '
+                  'features. The app uses no analytics, advertising, or '
+                  'tracking services of any kind.'),
+              _section(context, 'Data Stored on Your Device'),
+              _body(context,
+                  'The app stores the following information locally on your '
+                  'device only, using standard app preferences storage:\n\n'
+                  '  • Practice statistics (score, best streak)\n'
+                  '  • App settings (sound preference, onboarding status)\n\n'
+                  'This information is deleted automatically when you uninstall '
+                  'the app.'),
+              _section(context, 'Optional Account & Social Features'),
+              _body(context,
+                  'If you sign in (with Apple or Google) to use the friends '
+                  'features, the following is stored on our servers (Supabase):\n\n'
+                  '  • Your display name and a generated avatar\n'
+                  '  • Your practice streak (current, best, total days)\n'
+                  '  • Your friend connections, invites, and applause\n\n'
+                  'This data is visible only to friends you connect with — '
+                  'there is no public profile or global leaderboard. You can '
+                  'delete your account at any time from the Friends screen, '
+                  'which permanently removes all of it from our servers. '
+                  'Without an account, nothing ever leaves your device.'),
+              _section(context, 'MIDI and Bluetooth'),
+              _body(context,
+                  'If you connect a MIDI keyboard via USB or Bluetooth, the app '
+                  'communicates directly with that device to receive note input. '
+                  'No information about your device, your playing, or your MIDI '
+                  'hardware is transmitted anywhere.'),
+              _section(context, 'Children\'s Privacy'),
+              _body(context,
+                  'Scale Runner does not knowingly collect any information from '
+                  'anyone, including children under 13, because it does not '
+                  'collect information at all.'),
+              _section(context, 'Changes to This Policy'),
+              _body(context,
+                  'If this policy changes, the updated version will be posted '
+                  'here with a revised "Last updated" date.'),
+              _section(context, 'Contact'),
+              _body(context,
+                  'Questions about this privacy policy? Contact us at:\n'
+                  'channing@c1gnus.com'),
+            ],
+          ),
         ),
       ),
     );

@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -15,6 +13,7 @@ import '../runner/beat_debug.dart';
 import '../runner/jam_mode_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import '../widgets/jam_mode_settings_sheet.dart';
 import '../widgets/jam_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
@@ -50,8 +49,6 @@ class _JamModeScreenState extends State<JamModeScreen> {
   /// maj9 voicing fits in one span. Other modes keep the global 2-octave anchor.
   static const int _keyboardLowMidi = 48; // C3
   static const double _keyboardOctaves = 2.5;
-
-  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
@@ -211,10 +208,11 @@ class _JamModeScreenState extends State<JamModeScreen> {
           : Builder(
               builder: (context) {
                 final bodyHeight = MediaQuery.of(context).size.height;
-                final compact = _isMobile && bodyHeight < 500;
+                final compact = isCompactLayout(bodyHeight);
+                final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
                 final keyboardHeight = compact
-                    ? (bodyHeight * 0.40).clamp(120.0, 240.0)
-                    : (bodyHeight * 0.46).clamp(140.0, 240.0);
+                    ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                    : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                 return Stack(
                   children: [
                     SafeArea(
@@ -307,7 +305,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
           child: Text(
             c.running ? c.promptLabel : 'Jam Mode',
             style: TextStyle(
-              fontSize: compact ? 26 : (_isMobile ? 32 : 36),
+              fontSize: compact ? 26 : (isDesktopPlatform ? 36 : 32),
               fontWeight: FontWeight.w800,
               color: Colors.white,
               height: 1.1,

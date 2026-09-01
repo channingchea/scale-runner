@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -13,6 +11,7 @@ import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theme/app_theme.dart';
 import '../theory/voicings.dart';
+import '../ui/responsive.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/reminder_prompt_sheet.dart';
@@ -70,8 +69,6 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
   /// octave and back without transposing the display.
   static const double _keyboardOctaves = 3;
   static const double _topBarHeight = 44;
-
-  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
@@ -249,10 +246,11 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
                   animation: controller,
                   builder: (context, _) {
                     final bodyHeight = MediaQuery.of(context).size.height;
-                    final compact = _isMobile && bodyHeight < 500;
+                    final compact = isCompactLayout(bodyHeight);
+                    final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
                     final keyboardHeight = compact
-                        ? (bodyHeight * 0.40).clamp(120.0, 240.0)
-                        : (bodyHeight * 0.46).clamp(140.0, 240.0);
+                        ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                        : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                     return SafeArea(
                       bottom: false,
                       child: Column(
@@ -328,7 +326,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
           child: Text(
             c.keyLabel,
             style: TextStyle(
-              fontSize: compact ? 34 : (_isMobile ? 44 : 52),
+              fontSize: compact ? 34 : (isDesktopPlatform ? 52 : 44),
               fontWeight: FontWeight.w800,
               color: Colors.white,
               height: 1.1,

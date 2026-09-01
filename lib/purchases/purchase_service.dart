@@ -49,6 +49,8 @@ class PurchaseService extends ChangeNotifier {
   /// Initialise the SDK. Call once at startup, after `WidgetsFlutterBinding`.
   /// Never throws — failures leave the app in free (non-Pro) mode.
   Future<void> configure() async {
+    // Android gets the Play key; iOS and macOS both bill through StoreKit
+    // under one RevenueCat Apple app, so they share the Apple key.
     final apiKey = defaultTargetPlatform == TargetPlatform.android
         ? _googleApiKey
         : _appleApiKey;

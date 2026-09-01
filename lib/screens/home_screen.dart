@@ -11,6 +11,7 @@ import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import '../widgets/streak_sheets.dart';
 import '../widgets/welcome_sheet.dart';
 import 'quiz_screen.dart';
@@ -250,75 +251,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-              20, 20, 20, 20 + MediaQuery.of(context).padding.bottom),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 12),
-              _buildHeader(context),
-              const SizedBox(height: 24),
-              _buildMidiBanner(),
-              const SizedBox(height: 24),
-              Text('Practice',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              _ModeCard(
-                title: 'Scales',
-                subtitle: 'Play scales from a random key, note by note',
-                imagePath: 'assets/icon/Icon_Scales.png',
-                onTap: () => _openQuiz(QuizMode.scale),
-              ),
-              const SizedBox(height: 14),
-              _ModeCard(
-                title: 'Chords',
-                subtitle: 'Build the named chord, holding all the notes at once',
-                imagePath: 'assets/icon/Icon_Chords.png',
-                onTap: () => _openQuiz(QuizMode.chord),
-              ),
-              const SizedBox(height: 14),
-              _ModeCard(
-                title: 'Voicings',
-                subtitle: 'Build a voicing, then play it in all 12 keys',
-                imagePath: 'assets/icon/Icon_Voicings.png',
-                onTap: _openVoicings,
-              ),
-              const SizedBox(height: 14),
-              // The three below are Pro; the two free modes sit above them.
-              _ModeCard(
-                title: 'Scale Running',
-                subtitle:
-                    'Hold chords and run their modes in time, key by key',
-                imagePath: 'assets/icon/Icon_Running.png',
-                locked: !_purchases.isPro,
-                onTap: _openScaleRunGated,
-                onBadgeTap: _showPaywall,
-              ),
-              const SizedBox(height: 14),
-              _ModeCard(
-                title: 'Inversion Running',
-                subtitle:
-                    'Walk a chord up its inversions an octave and back down',
-                imagePath: 'assets/icon/invert-run.png',
-                locked: !_purchases.isPro,
-                onTap: _openInversionRunGated,
-                onBadgeTap: _showPaywall,
-              ),
-              const SizedBox(height: 14),
-              _ModeCard(
-                title: 'Jam Mode',
-                subtitle:
-                    'Comp diatonic chords in time, one per bar, in a single key',
-                imagePath: 'assets/icon/Jam.png',
-                locked: !_purchases.isPro,
-                onTap: _openJamModeGated,
-                onBadgeTap: _showPaywall,
-              ),
-            ],
+      body: ContentColumn(
+        child: SafeArea(
+          bottom: false,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+                20, 20, 20, 20 + MediaQuery.of(context).padding.bottom),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 12),
+                _buildHeader(context),
+                const SizedBox(height: 24),
+                _buildMidiBanner(),
+                const SizedBox(height: 24),
+                Text('Practice',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                _ModeCard(
+                  title: 'Scales',
+                  subtitle: 'Play scales from a random key, note by note',
+                  imagePath: 'assets/icon/Icon_Scales.png',
+                  onTap: () => _openQuiz(QuizMode.scale),
+                ),
+                const SizedBox(height: 14),
+                _ModeCard(
+                  title: 'Chords',
+                  subtitle: 'Build the named chord, holding all the notes at once',
+                  imagePath: 'assets/icon/Icon_Chords.png',
+                  onTap: () => _openQuiz(QuizMode.chord),
+                ),
+                const SizedBox(height: 14),
+                _ModeCard(
+                  title: 'Voicings',
+                  subtitle: 'Build a voicing, then play it in all 12 keys',
+                  imagePath: 'assets/icon/Icon_Voicings.png',
+                  onTap: _openVoicings,
+                ),
+                const SizedBox(height: 14),
+                // The three below are Pro; the two free modes sit above them.
+                _ModeCard(
+                  title: 'Scale Running',
+                  subtitle:
+                      'Hold chords and run their modes in time, key by key',
+                  imagePath: 'assets/icon/Icon_Running.png',
+                  locked: !_purchases.isPro,
+                  onTap: _openScaleRunGated,
+                  onBadgeTap: _showPaywall,
+                ),
+                const SizedBox(height: 14),
+                _ModeCard(
+                  title: 'Inversion Running',
+                  subtitle:
+                      'Walk a chord up its inversions an octave and back down',
+                  imagePath: 'assets/icon/invert-run.png',
+                  locked: !_purchases.isPro,
+                  onTap: _openInversionRunGated,
+                  onBadgeTap: _showPaywall,
+                ),
+                const SizedBox(height: 14),
+                _ModeCard(
+                  title: 'Jam Mode',
+                  subtitle:
+                      'Comp diatonic chords in time, one per bar, in a single key',
+                  imagePath: 'assets/icon/Jam.png',
+                  locked: !_purchases.isPro,
+                  onTap: _openJamModeGated,
+                  onBadgeTap: _showPaywall,
+                ),
+              ],
+            ),
           ),
         ),
       ),

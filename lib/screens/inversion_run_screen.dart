@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -14,6 +12,7 @@ import '../quiz/quiz_settings.dart';
 import '../runner/inversion_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import '../widgets/inversion_run_settings_sheet.dart';
 import '../widgets/inversion_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
@@ -49,8 +48,6 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   /// The transposing keyboard needs ~2 octaves: root → octave-root + the maj7
   /// above it (≈23 semitones). Two octaves (24 semitones span) covers it.
   static const int _keyboardOctaves = 2;
-
-  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
@@ -202,10 +199,11 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
                   animation: controller,
                   builder: (context, _) {
                     final bodyHeight = MediaQuery.of(context).size.height;
-                    final compact = _isMobile && bodyHeight < 500;
+                    final compact = isCompactLayout(bodyHeight);
+                    final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
                     final keyboardHeight = compact
-                        ? (bodyHeight * 0.40).clamp(120.0, 240.0)
-                        : (bodyHeight * 0.46).clamp(140.0, 240.0);
+                        ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                        : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                     return SafeArea(
                       bottom: false,
                       child: Column(
@@ -281,7 +279,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
           child: Text(
             c.chordLabel,
             style: TextStyle(
-              fontSize: compact ? 26 : (_isMobile ? 32 : 36),
+              fontSize: compact ? 26 : (isDesktopPlatform ? 36 : 32),
               fontWeight: FontWeight.w800,
               color: Colors.white,
               height: 1.1,

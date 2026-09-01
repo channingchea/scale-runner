@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../quiz/quiz_controller.dart';
 import '../theory/music_theory.dart';
+import '../ui/responsive.dart';
 
 /// A realistic, responsive on-screen piano.
 ///
@@ -38,6 +39,9 @@ class PianoKeyboard extends StatelessWidget {
 
   // Semitone offsets within an octave that are white keys (the rest are black).
   static const _whiteOffsets = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
+
+  /// The felt rail above the keys.
+  static const double _feltHeight = 7;
 
   bool _isWhite(int midi) => _whiteOffsets.contains(midi % 12);
 
@@ -128,17 +132,37 @@ class PianoKeyboard extends StatelessWidget {
       },
     );
 
-    return Column(
-      children: [
-        Container(
-          height: 7,
-          decoration: const BoxDecoration(
-            color: AppColors.felt,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(3)),
+    // White keys fill whatever width they are given, but a real white key is
+    // far taller than it is wide. Left alone on a wide macOS window or an iPad
+    // the keys become squat slabs, so cap the keyboard's width from its height
+    // and centre it. On a phone the cap is never reached and nothing changes.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.hasBoundedHeight
+            ? maxKeyboardWidth(
+                available: constraints.maxWidth,
+                height: constraints.maxHeight - _feltHeight,
+                whiteKeyCount: whiteNotes.length,
+              )
+            : constraints.maxWidth;
+        return Center(
+          child: SizedBox(
+            width: width,
+            child: Column(
+              children: [
+                Container(
+                  height: _feltHeight,
+                  decoration: const BoxDecoration(
+                    color: AppColors.felt,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(3)),
+                  ),
+                ),
+                Expanded(child: keys),
+              ],
+            ),
           ),
-        ),
-        Expanded(child: keys),
-      ],
+        );
+      },
     );
   }
 }

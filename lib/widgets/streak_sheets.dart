@@ -15,7 +15,8 @@ const bool kPubliclyLaunched = true;
 /// Where "share with friends" points: the public store listing once launched,
 /// the beta invite before that. Keep in sync with the "Get Scale Runner"
 /// button in web_hosting/hostinger/invite/index.html.
-String get appShareUrl => defaultTargetPlatform == TargetPlatform.iOS
+String get appShareUrl => (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS)
     ? (kPubliclyLaunched
         ? 'https://apps.apple.com/app/id6795850810'
         : 'https://testflight.apple.com/join/vMhnCACs')

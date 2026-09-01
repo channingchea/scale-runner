@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -16,6 +14,7 @@ import '../runner/beat_debug.dart';
 import '../runner/scale_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/rotate_hint_banner.dart';
@@ -42,8 +41,6 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   MetronomeController? _metronome;
   bool _noteSound = true;
   final NotePlayer _notes = NotePlayer();
-
-  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   @override
   void initState() {
@@ -205,10 +202,11 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
                 final bodyHeight = MediaQuery.of(context).size.height;
                 // Compact mode: landscape PHONES only. Portrait phones and
                 // tablets are tall enough for the regular layout.
-                final compact = _isMobile && bodyHeight < 500;
+                final compact = isCompactLayout(bodyHeight);
+                final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
                 final keyboardHeight = compact
-                    ? (bodyHeight * 0.40).clamp(120.0, 240.0)
-                    : (bodyHeight * 0.46).clamp(140.0, 240.0);
+                    ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                    : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                 return Stack(
                   children: [
                     SafeArea(
@@ -304,7 +302,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
           child: Text(
             c.keyLabel,
             style: TextStyle(
-              fontSize: compact ? 26 : (_isMobile ? 32 : 36),
+              fontSize: compact ? 26 : (isDesktopPlatform ? 36 : 32),
               fontWeight: FontWeight.w800,
               color: Colors.white,
               height: 1.1,

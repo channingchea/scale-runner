@@ -6,6 +6,7 @@ import '../quiz/quiz_settings.dart';
 import '../social/social_models.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../ui/responsive.dart';
 import 'social_screen.dart';
 
 /// Lifetime stats across every mode: Scale Running, Jam, Inversion Running,
@@ -72,110 +73,112 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Stats')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-              children: [
-                _sectionHeader('Mode scores'),
-                _scoreCaption(
-                    'A 0–100 score per mode, blending accuracy with how much '
-                    'you\'ve practiced. Shared with friends.'),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _modeScoreTile(
-                        'SCALE RUN', _modeStats.scaleRunningScore),
-                    const SizedBox(width: 10),
-                    _modeScoreTile('JAM', _modeStats.jamScore),
-                    const SizedBox(width: 10),
-                    _modeScoreTile('INVERSION', _modeStats.inversionScore),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                _sectionHeader('Practice streak'),
-                _card(
-                  child: Row(
+      body: ContentColumn(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                children: [
+                  _sectionHeader('Mode scores'),
+                  _scoreCaption(
+                      'A 0–100 score per mode, blending accuracy with how much '
+                      'you\'ve practiced. Shared with friends.'),
+                  const SizedBox(height: 10),
+                  Row(
                     children: [
-                      _streakStat(
-                          '${StreakService.instance.currentStreak}', 'current'),
-                      _streakStat(
-                          '${StreakService.instance.bestStreak}', 'best'),
-                      _streakStat(
-                          '${StreakService.instance.totalPracticeDays}',
-                          'total days'),
+                      _modeScoreTile(
+                          'SCALE RUN', _modeStats.scaleRunningScore),
+                      const SizedBox(width: 10),
+                      _modeScoreTile('JAM', _modeStats.jamScore),
+                      const SizedBox(width: 10),
+                      _modeScoreTile('INVERSION', _modeStats.inversionScore),
                     ],
                   ),
-                ),
-                if (!SocialService.instance.isSignedIn) ...[
-                  const SizedBox(height: 8),
-                  _syncCta(),
+                  const SizedBox(height: 20),
+                  _sectionHeader('Practice streak'),
+                  _card(
+                    child: Row(
+                      children: [
+                        _streakStat(
+                            '${StreakService.instance.currentStreak}', 'current'),
+                        _streakStat(
+                            '${StreakService.instance.bestStreak}', 'best'),
+                        _streakStat(
+                            '${StreakService.instance.totalPracticeDays}',
+                            'total days'),
+                      ],
+                    ),
+                  ),
+                  if (!SocialService.instance.isSignedIn) ...[
+                    const SizedBox(height: 8),
+                    _syncCta(),
+                  ],
+                  const SizedBox(height: 20),
+                  _sectionHeader('Scale Running'),
+                  _card(
+                    child: Column(
+                      children: [
+                        _AccuracyBarList(
+                          stats: _runKeys,
+                          emptyLabel: 'Play a Scale Running session to see '
+                              'per-key stats here.',
+                        ),
+                        const SizedBox(height: 4),
+                        _subLabel('By mode'),
+                        _AccuracyBarList(
+                          stats: _runModes,
+                          emptyLabel: 'No mode data yet.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionHeader('Jam Mode'),
+                  _card(
+                    child: Column(
+                      children: [
+                        _subLabel('By quality'),
+                        _AccuracyBarList(
+                          stats: _jamQualities,
+                          emptyLabel: 'Play a Jam Mode session to see '
+                              'per-quality stats here.',
+                        ),
+                        const SizedBox(height: 4),
+                        _subLabel('By degree'),
+                        _AccuracyBarList(
+                          stats: _jamDegrees,
+                          emptyLabel: 'No degree data yet.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionHeader('Inversion Running'),
+                  _card(
+                    child: _AccuracyBarList(
+                      stats: _invChords,
+                      emptyLabel: 'Play an Inversion Running session to see '
+                          'per-chord stats here.',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _sectionHeader('Quiz'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _quizModeCard(
+                            'Scales', _scaleScore, _scaleStreak),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _quizModeCard(
+                            'Chords', _chordScore, _chordStreak),
+                      ),
+                    ],
+                  ),
                 ],
-                const SizedBox(height: 20),
-                _sectionHeader('Scale Running'),
-                _card(
-                  child: Column(
-                    children: [
-                      _AccuracyBarList(
-                        stats: _runKeys,
-                        emptyLabel: 'Play a Scale Running session to see '
-                            'per-key stats here.',
-                      ),
-                      const SizedBox(height: 4),
-                      _subLabel('By mode'),
-                      _AccuracyBarList(
-                        stats: _runModes,
-                        emptyLabel: 'No mode data yet.',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _sectionHeader('Jam Mode'),
-                _card(
-                  child: Column(
-                    children: [
-                      _subLabel('By quality'),
-                      _AccuracyBarList(
-                        stats: _jamQualities,
-                        emptyLabel: 'Play a Jam Mode session to see '
-                            'per-quality stats here.',
-                      ),
-                      const SizedBox(height: 4),
-                      _subLabel('By degree'),
-                      _AccuracyBarList(
-                        stats: _jamDegrees,
-                        emptyLabel: 'No degree data yet.',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _sectionHeader('Inversion Running'),
-                _card(
-                  child: _AccuracyBarList(
-                    stats: _invChords,
-                    emptyLabel: 'Play an Inversion Running session to see '
-                        'per-chord stats here.',
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _sectionHeader('Quiz'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _quizModeCard(
-                          'Scales', _scaleScore, _scaleStreak),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _quizModeCard(
-                          'Chords', _chordScore, _chordStreak),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+      ),
     );
   }
 

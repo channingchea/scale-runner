@@ -6,6 +6,7 @@ import '../social/social_models.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theme/app_theme.dart';
+import '../ui/responsive.dart';
 import '../widgets/avatar_picker_sheet.dart';
 import '../widgets/social_widgets.dart';
 import '../widgets/streak_sheets.dart' show appShareUrl;
@@ -53,8 +54,20 @@ class _SocialScreenState extends State<SocialScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Friends')),
-      body: _social.isSignedIn ? _buildSignedIn() : _buildSignedOut(),
+      appBar: AppBar(
+        title: const Text('Friends'),
+        actions: [
+          if (_social.isSignedIn)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: _refreshAndMarkSeen,
+            ),
+        ],
+      ),
+      body: ContentColumn(
+        child: _social.isSignedIn ? _buildSignedIn() : _buildSignedOut(),
+      ),
     );
   }
 

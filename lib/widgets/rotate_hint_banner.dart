@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
+import '../ui/responsive.dart';
 
 /// A small dismissible banner shown in portrait on the practice screens,
 /// suggesting landscape for bigger keys. Dismissal is persisted via
@@ -34,9 +35,13 @@ class _RotateHintBannerState extends State<RotateHintBanner> {
 
   @override
   Widget build(BuildContext context) {
+    // A tall, narrow desktop window also reports "portrait", and telling
+    // someone to rotate their Mac is nonsense — they resize it instead.
     final portrait =
         MediaQuery.orientationOf(context) == Orientation.portrait;
-    if (_dismissed || !portrait) return const SizedBox.shrink();
+    if (_dismissed || !portrait || isDesktopPlatform) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Container(

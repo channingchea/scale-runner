@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Scale Runner</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconFile</key>
@@ -22,11 +24,44 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Scale Runner uses Bluetooth to connect to your wireless MIDI piano or keyboard.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Scale Runner uses Bluetooth to connect to your wireless MIDI piano or keyboard.</string>
+	<key>GIDClientID</key>
+	<string>1055426007613-fediubj1sbsa5v5s7v4ss4lbrj5horc9.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.scalerunner.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>scalerunner</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1055426007613-fediubj1sbsa5v5s7v4ss4lbrj5horc9</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<true/>
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
 </dict>
 </plist>
