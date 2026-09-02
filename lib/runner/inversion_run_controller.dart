@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../theory/music_theory.dart';
+import '../theory/fretboard.dart';
 import '../theory/inversion_running.dart';
 import 'beat_judge.dart';
 import 'scale_run_controller.dart' show RunTally, RunTier, runTierFor;
@@ -55,6 +56,7 @@ class InversionRunController extends ChangeNotifier {
     int? seed,
     this.onBeatMs = 70,
     this.closeMs = 150,
+    this.instrument = Instrument.piano,
   })  : _chords = (chords == null || chords.isEmpty) ? _defaultChords : chords,
         _rng = Random(seed) {
     _buildCycle();
@@ -71,6 +73,11 @@ class InversionRunController extends ChangeNotifier {
   ];
 
   final List<ChordFormula> _chords;
+
+  /// Which surface the round is voiced for. Only affects which octave each
+  /// chord tone lands in ([InversionCycle]); judging is unchanged, so scores
+  /// stay comparable across instruments.
+  final Instrument instrument;
 
   /// When true, the metronome drives advancement and a count-in precedes the
   /// first step. When false, the drill is self-paced (press-driven).
@@ -300,7 +307,7 @@ class InversionRunController extends ChangeNotifier {
   void _buildCycle() {
     final rootPc = _rng.nextInt(12);
     final chord = _chords[_rng.nextInt(_chords.length)];
-    _cycle = InversionCycle(chord, rootPc);
+    _cycle = InversionCycle(chord, rootPc, instrument: instrument);
   }
 
   // ---- Beat clock --------------------------------------------------------

@@ -5,6 +5,7 @@
 /// same pattern as `scale_running.dart`.
 library;
 
+import 'fretboard.dart';
 import 'music_theory.dart';
 
 /// The fixed display octave the round's root is transposed into. The
@@ -93,14 +94,29 @@ class InversionCycle {
   /// fixed display octave). The transposing keyboard anchors here.
   final int lowMidi;
 
+  /// Which surface this cycle was built for. Piano is the historical path and
+  /// is byte-identical to what shipped before guitar existed.
+  final Instrument instrument;
+
   /// Ordered voicings: ascending inversions then descending, apex once.
   final List<InversionStep> steps;
 
-  InversionCycle._(this.chord, this.rootPc, this.lowMidi, this.steps);
+  InversionCycle._(
+      this.chord, this.rootPc, this.lowMidi, this.instrument, this.steps);
 
   /// Build the cycle for [chord] rooted at [rootPc] (0–11). The root is placed
   /// in the fixed display octave so the keyboard transposes per round.
-  factory InversionCycle(ChordFormula chord, int rootPc) {
+  ///
+  /// On guitar each voicing is re-spelled by [guitarVoicing] so it sits under
+  /// one hand: triads stay close, 7ths become drop 2. That changes only which
+  /// octave each tone is in — the pitch-class set and the bass pitch class,
+  /// which are the two things validation looks at, are identical either way,
+  /// so a step means the same thing on both instruments.
+  factory InversionCycle(
+    ChordFormula chord,
+    int rootPc, {
+    Instrument instrument = Instrument.piano,
+  }) {
     final root = rootPc % 12;
     final lowMidi = _anchorOctaveBase + root;
     final n = chord.inversionCount; // 3 for triads, 4 for 7ths
@@ -110,19 +126,24 @@ class InversionCycle {
       for (var i = n - 1; i >= 0; i--) i,
     ];
     final baseFormula = chord.formula;
+    final close = [for (final inv in order) chord.inversion(lowMidi, inv)];
+    // One shared octave for the whole cycle, so the climb survives the move to
+    // a neck. See [guitarVoicingCycle] for why per-step placement does not.
+    final voiced =
+        instrument == Instrument.guitar ? guitarVoicingCycle(close) : close;
     final steps = [
-      for (final inv in order)
+      for (var i = 0; i < order.length; i++)
         InversionStep(
-          inversion: inv,
-          notes: chord.inversion(lowMidi, inv),
-          label: inv == n ? 'Root (8va)' : inversionLabel(inv),
-          formula: inv == n
-              ? '${_rotateFormula(baseFormula, inv)} (8va)'
-              : _rotateFormula(baseFormula, inv),
-          isOctaveRoot: inv == n,
+          inversion: order[i],
+          notes: voiced[i],
+          label: order[i] == n ? 'Root (8va)' : inversionLabel(order[i]),
+          formula: order[i] == n
+              ? '${_rotateFormula(baseFormula, order[i])} (8va)'
+              : _rotateFormula(baseFormula, order[i]),
+          isOctaveRoot: order[i] == n,
         ),
     ];
-    return InversionCycle._(chord, root, lowMidi, steps);
+    return InversionCycle._(chord, root, lowMidi, instrument, steps);
   }
 
   /// Number of steps in the cycle (7 for triads, 9 for 7th chords).
