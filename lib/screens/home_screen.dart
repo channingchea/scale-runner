@@ -340,33 +340,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             fit: BoxFit.cover,
           ),
         ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: ShaderMask(
-                  shaderCallback: (b) =>
-                      AppColors.accentGradient.createShader(b),
-                  child: const Text(
-                    'Scale Runner',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const Text('Make music theory practical',
-                  style:
-                      TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            ],
-          ),
-        ),
+        const Spacer(),
         if (_streak.currentStreak > 0) ...[
           _StreakBadge(
             streak: _streak.currentStreak,

@@ -16,7 +16,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1500));
     await tester.pumpAndSettle();
 
-    expect(find.text('Scale Runner'), findsOneWidget);
     expect(find.text('Scales'), findsOneWidget);
     expect(find.text('Chords'), findsOneWidget);
   });
