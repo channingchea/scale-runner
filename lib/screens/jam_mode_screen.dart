@@ -244,9 +244,15 @@ class _JamModeScreenState extends State<JamModeScreen> {
                 final bodyHeight = MediaQuery.of(context).size.height;
                 final compact = isCompactLayout(bodyHeight);
                 final maxKeyHeight = isDesktopPlatform ? 320.0 : 240.0;
-                final keyboardHeight = compact
-                    ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
-                    : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
+                // Guitar's portrait chord box wants the room a piano never
+                // would: a bigger cell is just easier to tap, and a tall
+                // diagram doesn't look odd the way a tall piano would.
+                final keyboardHeight = _instrument == Instrument.guitar &&
+                        !compact
+                    ? (bodyHeight * 0.62).clamp(280.0, bodyHeight * 0.72)
+                    : compact
+                        ? (bodyHeight * 0.40).clamp(120.0, maxKeyHeight)
+                        : (bodyHeight * 0.46).clamp(140.0, maxKeyHeight);
                 return Stack(
                   children: [
                     SafeArea(

@@ -196,9 +196,14 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             // Proportional rather than fixed so the keyboard shrinks with the
-            // soft keyboard instead of shoving the name field off-screen.
-            final keyboardHeight =
-                (constraints.maxHeight * 0.34).clamp(110.0, 200.0);
+            // soft keyboard instead of shoving the name field off-screen —
+            // guitar's portrait box gets a bigger share for the same reason
+            // the drill screens do: a bigger cell is easier to tap.
+            final compact = isCompactLayout(MediaQuery.of(context).size.height);
+            final keyboardHeight = _instrument == Instrument.guitar && !compact
+                ? (constraints.maxHeight * 0.58)
+                    .clamp(260.0, constraints.maxHeight * 0.75)
+                : (constraints.maxHeight * 0.34).clamp(110.0, 200.0);
             return Column(
               children: [
                 if (_settings != null) RotateHintBanner(settings: _settings!),

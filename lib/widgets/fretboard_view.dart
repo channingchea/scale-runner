@@ -7,6 +7,7 @@ import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../theme/app_theme.dart';
 import '../theory/fretboard.dart';
 import '../theory/music_theory.dart';
+import '../ui/responsive.dart';
 
 /// How the neck is laid out.
 enum FretboardOrientation {
@@ -93,11 +94,13 @@ class FretboardView extends StatefulWidget {
   State<FretboardView> createState() => _FretboardViewState();
 }
 
-/// Widest a string may be spaced. Past this the neck stops reading as a neck
-/// on a Mac window or an iPad, the same reason the piano caps its width.
+/// Widest a string may be spaced on a resizable desktop window. Past this the
+/// neck stops reading as a neck. Phones and tablets ignore this cap entirely
+/// (see [_FretboardViewState._cappedSize]) — a touch screen is never big
+/// enough for a bigger cell to be a bad thing.
 const double _maxStringPitch = 60;
 
-/// Widest a fret may be spaced, for the same reason.
+/// Widest a fret may be spaced, same desktop-only reasoning.
 const double _maxFretPitch = 72;
 
 /// Matches the piano's key animation exactly, so feedback reads identically
@@ -106,6 +109,23 @@ const Duration _glowDuration = Duration(milliseconds: 90);
 
 /// Frets that carry a position marker; 12 gets the double dot.
 const Set<int> _inlayFrets = {3, 5, 7, 9, 12, 15, 17, 19, 21};
+
+// ---- Wood palette --------------------------------------------------------
+// Decorative only — a rosewood neck, not a semantic app color, so it stays
+// local rather than joining AppColors. Feedback/target colors are untouched;
+// this only reskins the board itself.
+const Color _woodDark = Color(0xFF2E2016);
+const Color _woodMid = Color(0xFF4A3323);
+const Color _woodLight = Color(0xFF5E4130);
+const Color _grainLine = Color(0xFF1E1509);
+const Color _boneNut = Color(0xFFE9DFC9);
+const Color _nutShadow = Color(0xFFBFB090);
+const Color _fretHighlight = Color(0xFFD8DCE2);
+const Color _inlayFill = Color(0xFFCDBB93);
+const Color _inlayRing = Color(0xFF8D7A55);
+const Color _stringHighlight = Color(0xFFDCE0E5);
+const Color _stringShadow = Color(0xFF3A3D42);
+const Color _labelMuted = Color(0xFFC2B295); // warm, reads on wood
 
 class _FretboardViewState extends State<FretboardView>
     with SingleTickerProviderStateMixin {
@@ -336,22 +356,31 @@ class _FretboardViewState extends State<FretboardView>
     );
   }
 
-  /// Keep string and fret spacing in a playable range on a wide window, the
-  /// fretboard's version of the piano's width cap. On a phone neither cap is
-  /// reached and the board fills whatever it is given.
+  /// On a resizable desktop window, keep string and fret spacing in a
+  /// playable range — the fretboard's version of the piano's width cap.
+  /// Phones and tablets get no ceiling at all: touch devices are always
+  /// small enough that a bigger cell is strictly better to tap, so in
+  /// portrait the box uses all the height its screen gives it, and in
+  /// landscape the neck runs edge to edge.
   Size _cappedSize(BoxConstraints constraints) {
     final vertical = widget.orientation == FretboardOrientation.verticalBox;
     final strings = widget.tuning.stringCount * _maxStringPitch;
     final frets = widget.box.width * _maxFretPitch;
-    final maxWidth = vertical ? strings : frets;
-    final maxHeight = vertical ? frets : strings;
+    final fallbackWidth = vertical ? strings : frets;
+    final fallbackHeight = vertical ? frets : strings;
+    if (!isDesktopPlatform) {
+      return Size(
+        constraints.hasBoundedWidth ? constraints.maxWidth : fallbackWidth,
+        constraints.hasBoundedHeight ? constraints.maxHeight : fallbackHeight,
+      );
+    }
     return Size(
       constraints.hasBoundedWidth
-          ? math.min(constraints.maxWidth, maxWidth)
-          : maxWidth,
+          ? math.min(constraints.maxWidth, fallbackWidth)
+          : fallbackWidth,
       constraints.hasBoundedHeight
-          ? math.min(constraints.maxHeight, maxHeight)
-          : maxHeight,
+          ? math.min(constraints.maxHeight, fallbackHeight)
+          : fallbackHeight,
     );
   }
 }
@@ -505,49 +534,90 @@ class _FretboardPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final g = geometry;
     final box = g.box;
+    final across = g.isVertical ? size.width : size.height;
+    final along = g.isVertical ? size.height : size.width;
 
+    // Wood background: a soft gradient along the neck, plus a handful of
+    // long, faint grain streaks running its length.
+    final bgRect = Offset.zero & size;
     canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = AppColors.surfaceHigh,
+      bgRect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: g.isVertical ? Alignment.topLeft : Alignment.topCenter,
+          end: g.isVertical ? Alignment.bottomRight : Alignment.bottomCenter,
+          colors: const [_woodLight, _woodMid, _woodDark],
+        ).createShader(bgRect),
     );
+    final grainPaint = Paint()
+      ..color = _grainLine.withValues(alpha: 0.16)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+    for (final f in const [0.08, 0.26, 0.47, 0.68, 0.88]) {
+      final start = g.isVertical ? Offset(f * across, 0) : Offset(0, f * across);
+      final mid = g.isVertical
+          ? Offset((f + 0.015) * across, along * 0.5)
+          : Offset(along * 0.5, (f + 0.015) * across);
+      final end =
+          g.isVertical ? Offset(f * across, along) : Offset(along, f * across);
+      canvas.drawPath(
+        Path()
+          ..moveTo(start.dx, start.dy)
+          ..quadraticBezierTo(mid.dx, mid.dy, end.dx, end.dy),
+        grainPaint,
+      );
+    }
 
-    // Fret wire between every pair of bands, and a fat nut when the box sits
-    // at the top of the neck.
+    // Fret wire between every pair of bands — brushed metal — and a bone
+    // nut with its own drop shadow where the box sits at the top of the neck.
     final wire = Paint()
-      ..color = AppColors.border
-      ..strokeWidth = 1.5;
+      ..color = _fretHighlight.withValues(alpha: 0.85)
+      ..strokeWidth = 1.8;
     final nut = Paint()
-      ..color = AppColors.textSecondary
-      ..strokeWidth = 5;
+      ..color = _boneNut
+      ..strokeWidth = 6;
+    final nutShadow = Paint()
+      ..color = _nutShadow.withValues(alpha: 0.7)
+      ..strokeWidth = 1.4;
     for (var f = box.start; f <= box.end; f++) {
       final (start, _) = g.fretBand(f);
-      _line(canvas, g, start, f == 1 && box.start == 0 ? nut : wire);
+      if (f == 1 && box.start == 0) {
+        _line(canvas, g, start, nut);
+        _line(canvas, g, start + 3.2, nutShadow);
+      } else {
+        _line(canvas, g, start, wire);
+      }
     }
     final (_, tail) = g.fretBand(box.end);
     _line(canvas, g, tail, wire);
 
     // Position markers, so the eye can find fret 5 or 7 without counting.
-    final inlay = Paint()..color = AppColors.border;
+    final inlayFill = Paint()..color = _inlayFill;
+    final inlayRing = Paint()
+      ..color = _inlayRing
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
     for (var f = box.start; f <= box.end; f++) {
       if (!_inlayFrets.contains(f)) continue;
-      final along = g.fretCentre(f);
-      final across = g.isVertical ? size.width : size.height;
+      final fretAlong = g.fretCentre(f);
       final offsets = f == 12 ? [across * 0.3, across * 0.7] : [across * 0.5];
       for (final o in offsets) {
-        canvas.drawCircle(
-          g.isVertical ? Offset(o, along) : Offset(along, o),
-          3,
-          inlay,
-        );
+        final centre =
+            g.isVertical ? Offset(o, fretAlong) : Offset(fretAlong, o);
+        canvas.drawCircle(centre, 4, inlayFill);
+        canvas.drawCircle(centre, 4, inlayRing);
       }
     }
 
-    // Strings, thicker as they get lower, like the real thing.
+    // Strings: thicker and duller as they get lower (wound bass strings),
+    // thinner and brighter toward the top (plain steel), like the real thing.
     for (var s = 0; s < tuning.stringCount; s++) {
       final centre = g.stringCentre(s);
+      final t = tuning.stringCount <= 1 ? 1.0 : s / (tuning.stringCount - 1);
       final paint = Paint()
-        ..color = AppColors.textMuted
-        ..strokeWidth = 2.4 - s * 0.25;
+        ..color = Color.lerp(_stringShadow, _stringHighlight, 0.3 + t * 0.55)!
+        ..strokeWidth = 2.6 - s * 0.28
+        ..strokeCap = StrokeCap.round;
       if (g.isVertical) {
         canvas.drawLine(Offset(centre, 0), Offset(centre, size.height), paint);
       } else {
@@ -615,7 +685,7 @@ class _FretboardPainter extends CustomPainter {
         style: TextStyle(
           fontSize: side < 26 ? 8 : 10,
           fontWeight: FontWeight.w600,
-          color: lit ? AppColors.bg : AppColors.textMuted,
+          color: lit ? AppColors.bg : _labelMuted,
         ),
       ),
       textDirection: TextDirection.ltr,
