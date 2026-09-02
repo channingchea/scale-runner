@@ -162,7 +162,11 @@ live bugs on piano.
   one), so both seams are level and timbre matched; no existing file was
   touched. Assets grew from 1.5 MB to 2.7 MB.
 
-## Phase 1: Device check (blocks Phases 2+)
+## Phase 1: Device check (**still open — needs hardware**)
+Phases 2 and 3 were built ahead of this against the numbers below, so the
+check can now be run on the real `FretboardView` in a drill rather than on a
+throwaway grid. Nothing after Phase 3 should be tuned until it is done.
+
 Cell size cannot be judged in a simulator or in the HTML proof.
 - [ ] Throw a static vertical 6-string x 5-fret grid into a drill's keyboard
       slot on a real phone in portrait. Expect ~55pt strings, ~44pt frets.
@@ -176,75 +180,83 @@ Cell size cannot be judged in a simulator or in the HTML proof.
       into this doc.
 
 ## Phase 2: Theory core, `lib/theory/fretboard.dart`
-Pure Dart, no UI, no MIDI, fully unit-testable, same shape as
-`music_theory.dart`. All guitar-specific ambiguity lives here.
-- [ ] `Instrument { piano, guitar }` enum (used by settings, voicings and the
-      cycles).
-- [ ] `Tuning.standard` (`[40,45,50,55,59,64]`), `maxFret = 22`,
-      `midiAt(string, fret)`, `positionsFor(midi)` (list of `(string, fret)`),
-      `lowest = 40`, `highest = 86`.
-- [ ] `FretBox(start, width)` with `contains(fret)`; default width 5, allowed
-      to grow to 6 when a target set needs it.
-- [ ] `primaryFor(midi, box)`: the one position the drill "means" (in-box,
-      then highest string; falls back to the nearest position if none is
-      in-box).
-- [ ] `boxFor(targets)`: smallest window holding one position per target
-      note, tie-break lower on the neck. This is what anchors every drill.
-- [ ] `fit(notes, {adjacentOnly})`: exact-interval placement, one note per
-      string, ascending pitch on ascending strings, span <= 5 frets; among
-      candidates prefer the lowest max-fret. Returns `(startString, frets)` or
-      null. `adjacentOnly: true` for Inversion Running, `false` for Voicings
-      (an open triad like `[0,7,16]` skips a string).
-- [ ] `drop2(notes)` and `guitarVoicing(notes)`: triads unchanged, 4-note
-      chords drop-2. Then the re-voice rule: if the fit's max fret > 15, try
-      the same pitches on a higher string set; if none, drop the whole voicing
-      an octave. Validation is pitch-class + bass so this never changes what
-      counts as correct.
-- [ ] `InversionCycle(chord, rootPc, {instrument})`: for guitar, `notes` =
-      `guitarVoicing(chord.inversion(lowMidi, inv))` re-voiced as above.
-      `InversionRunController` passes the instrument through (line 303); no
-      other controller code changes. Piano path byte-identical.
-- [ ] Tests (`test/fretboard_test.dart`): position counts over 48-84; box dot
-      count <= 20 for every scale in the app; `boxFor` <= 6 frets for every
-      Quiz scale and chord in every root 48-59; every `commonChords` x 12
-      keys x every step fits in <= 4 frets under `guitarVoicing` and lands
-      at fret <= 15; existing `inversion_running_test.dart` still passes
-      unchanged for piano.
+**DONE 2026-09-02, commit `801db2b`.** Pure Dart, no UI, no MIDI, fully
+unit-testable. All guitar-specific ambiguity lives here.
+- [x] `Instrument { piano, guitar }` with `byName` for persistence.
+- [x] `Tuning.standard`, `kMaxFret = 22`, `midiAt`, `positionsFor`,
+      `lowest = 40`, `highest() = 86`.
+- [x] `FretBox(start, width)` with `contains`, `distanceTo`, `clamped`.
+- [x] `primaryFor(midi, box)`, `boxFor(targets)`, `fit(notes, {adjacentOnly})`
+      returning a `FretShape`, `drop2`, `guitarVoicing`,
+      `guitarVoicingCycle`.
+- [x] `InversionCycle(chord, rootPc, {instrument})` and
+      `InversionRunController(instrument:)`, both defaulting to piano.
+- [x] `test/fretboard_test.dart`, 25 tests.
+
+### What Phase 2 corrected in this plan
+- **`fit` returns a `FretShape` (positions aligned to the notes), not
+  `(startString, frets)`**, because `adjacentOnly: false` can skip a string
+  and a start-plus-list cannot say which one.
+- **Drop 2 changes the bass, and the bass is what the drill validates.**
+  Dropping the second voice of the close voicing puts the 5th under a root
+  position chord, which is a different inversion, so `currentVoicingHeld`
+  would start demanding the wrong bass. `guitarVoicing` takes the drop 2
+  whose bass is unchanged instead: the close voicing two rotations up, then
+  dropped, which reduces to raising the second note from the bottom an octave
+  (`[a,b,c,d]` -> `[a,c,d,b+12]`). C E G B becomes C G B E, the standard
+  root-position drop 2. Pitch classes and bass pitch class are identical to
+  the piano voicing in all 156 chord-and-key cycles, so judging, scoring and
+  stats are untouched.
+- **Per-step octave choice destroys the cycle.** The apex never fits under a
+  hand where it is written, so it drops back onto exactly the notes of root
+  position, in **156 of 156** cycles, not just "for high keys" as the open
+  question below guessed. `guitarVoicingCycle` transposes the whole cycle by
+  one shared offset, which keeps every interval between steps. All 156 now
+  rise strictly in bass and top note from root position to the apex, sit on
+  consecutive strings inside a five-fret box (max span 4), and reach no
+  higher than fret 16.
+- **Measured, so nothing here needs re-deriving:** a note over 48-72 has 2 to
+  5 positions; a 7-note scale paints at most 18 dots in a five-fret box (the
+  test asserts 20); `boxFor` returns width 5 for every quiz round the app can
+  generate, scale or chord, in every root 48-59, so the six-fret allowance is
+  never needed there.
 
 ## Phase 3: Widget, `lib/widgets/fretboard_view.dart`
-- [ ] Constructor mirrors `PianoKeyboard`: `feedbackFor`, `isTargetHint`,
+**BUILT 2026-09-02. Not yet on hardware — Phase 1 is the check.**
+- [x] Constructor mirrors `PianoKeyboard`: `feedbackFor`, `isTargetHint`,
       `onKeyDown`, `onKeyUp`, `showLabels`, plus `box`, `orientation`
-      (vertical box / horizontal neck), `leftHanded`, `twinMode`.
-- [ ] `CustomPaint` for strings, frets, nut, inlays at 3/5/7/9/12/15/17/19/21,
+      (`verticalBox` / `horizontalNeck`), `leftHanded`, `twinMode`
+      (`primaryOnly` / `primaryAndGhost` / `all`), `tuning`.
+- [x] `CustomPaint` for strings, frets, nut, inlays at 3/5/7/9/12/15/17/19/21,
       fret numbers, dots and glows. Horizontal neck uses the 17.817 spacing
       rule; the vertical box uses equal fret spacing (it is a diagram, not a
       neck).
-- [ ] **Input via `Listener`, keyed by pointer id.** `onPointerDown` hit-tests
+- [x] **Input via `Listener`, keyed by pointer id.** `onPointerDown` hit-tests
       to (string, fret); `onPointerUp` and `onPointerCancel` release that
       pointer's note. A pointer that moves to another cell releases the old
       note and presses the new one (matches the piano's tap-cancel
       behaviour). Reject a second pointer landing on a string that already
       has one down.
-- [ ] **Ref-count per MIDI note.** Fret 5 on A and open D are both 50: call
+- [x] **Ref-count per MIDI note.** Fret 5 on A and open D are both 50: call
       `onKeyDown` on the first pointer for that note and `onKeyUp` on the
       last, so lifting one finger never releases a note the other still
       holds.
-- [ ] **Glow only the tapped position.** `feedbackFor(midi)` returns
+- [x] **Glow only the tapped position.** `feedbackFor(midi)` returns
       `pressed` for every twin; the widget knows which cell the pointer is on
       and lights that one. A note held with no pointer (MIDI keyboard) lights
       its primary position.
-- [ ] Hint dots: `isTargetHint(midi)` is a predicate, so build the target set
+- [x] Hint dots: `isTargetHint(midi)` is a predicate, so build the target set
       by querying 40-86 once per frame, then draw per `twinMode`: primary
       only, primary + ghost outline (**default**), or all positions. Dots
       hide under a glow, as on the piano.
-- [ ] Labels: note name per cell when `showLabels`, font size stepping down
+- [x] Labels: note name per cell when `showLabels`, font size stepping down
       with cell width like `_WhiteKey` does.
-- [ ] `Semantics(label: noteName, button: true)` per cell, as the piano has.
-- [ ] Reuse `AppColors.correct` / `wrong` / `accent` / `target` and the same
+- [x] `Semantics(label: noteName, button: true)` per cell, as the piano has.
+- [x] Reuse `AppColors.correct` / `wrong` / `accent` / `target` and the same
       90 ms animation so feedback reads identically to the piano.
-- [ ] Width/height cap for desktop and iPad, the fretboard's equivalent of
+- [x] Width/height cap for desktop and iPad, the fretboard's equivalent of
       `maxKeyboardWidth` (string pitch 40-60pt, never wider).
-- [ ] Widget test: two simultaneous pointers on different strings produce two
+- [x] Widget test (`test/fretboard_view_test.dart`, 11 tests): two simultaneous pointers on different strings produce two
       `onKeyDown`s; twin note ref-counting; pointer cancel releases; lefty
       flip mirrors string order but not fret order.
 
@@ -341,9 +353,9 @@ Pure Dart, no UI, no MIDI, fully unit-testable, same shape as
 ## Open questions / risks
 - **Landscape phones** (~26pt strings) are the remaining touch risk; Phase 1
   decides whether they get the box too.
-- **Inversion apex**: the re-voice rule can make "Root (8va)" land in the
-  same place as root position for high keys. Acceptable, or cap the climb?
-  Decide after seeing it on hardware.
+- ~~**Inversion apex**~~: **settled in Phase 2.** It was not "for high keys",
+  it was every key, so `guitarVoicingCycle` picks one octave for the whole
+  cycle. The apex now always differs from root position.
 - **Three-state dots on guitar** (off / primary / all) instead of the current
   on/off: the twin-mode setting in Phase 4 covers it globally; a per-drill
   three-state is v2 if anyone asks.
