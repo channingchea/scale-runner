@@ -79,6 +79,7 @@ class QuizSettings {
   static const _runSeventhsKey = 'run_sevenths';
   static const _runStartKeyKey = 'run_start_key';
   static const _runRepsKey = 'run_reps';
+  static const _runShowDotsKey = 'run_show_dots';
 
   // Inversion Running drill.
   static const _invChordsKey = 'inv_chords';
@@ -322,6 +323,14 @@ class QuizSettings {
   Future<void> setRunRepsPerKey(int reps) async {
     await _prefs.setInt(
         _runRepsKey, runRepsOptions.contains(reps) ? reps : 1);
+  }
+
+  /// Whether the blue target dots hint is shown on the keyboard. Default on.
+  Future<bool> runShowDots() async =>
+      await _prefs.getBool(_runShowDotsKey) ?? true;
+
+  Future<void> setRunShowDots(bool on) async {
+    await _prefs.setBool(_runShowDotsKey, on);
   }
 
   /// The enabled [ScaleFormula]s (preserving library order). Falls back to the

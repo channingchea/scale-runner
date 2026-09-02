@@ -38,6 +38,7 @@ class ScaleRunScreen extends StatefulWidget {
 class _ScaleRunScreenState extends State<ScaleRunScreen> {
   ScaleRunController? _controller;
   QuizSettings? _settings;
+  bool _showDots = true;
   MetronomeController? _metronome;
   bool _noteSound = true;
   final NotePlayer _notes = NotePlayer();
@@ -96,6 +97,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     if (settings == null || metronome == null) return;
     metronome.stop();
     _noteSound = await settings.noteSoundEnabled();
+    _showDots = await settings.runShowDots();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
@@ -586,7 +588,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
               lowMidi: QuizController.keyboardLowMidi,
               octaves: QuizController.keyboardOctaves.toDouble(),
               feedbackFor: c.feedbackFor,
-              isTargetHint: c.isTargetHint,
+              isTargetHint: _showDots ? c.isTargetHint : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
             ),

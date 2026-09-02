@@ -6,7 +6,8 @@ import '../theory/music_theory.dart';
 import '../theory/scale_running.dart';
 
 /// Settings for the Scale Running drill: chords on/off, progression preset,
-/// key increment, and triads vs 7ths. Persists immediately and calls
+/// key increment, triads vs 7ths, and the target-dots hint. Persists
+/// immediately and calls
 /// [onChanged] so the screen can rebuild its controller.
 class ScaleRunSettingsSheet extends StatefulWidget {
   const ScaleRunSettingsSheet({
@@ -46,6 +47,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
   KeyIncrement _increment = KeyIncrement.fifths;
   int _startKeyPc = 0;
   int _reps = 1;
+  bool _showDots = true;
   bool _loading = true;
 
   @override
@@ -61,6 +63,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
     final increment = await widget.settings.runKeyIncrement();
     final startKeyPc = await widget.settings.runStartKeyPc();
     final reps = await widget.settings.runRepsPerKey();
+    final showDots = await widget.settings.runShowDots();
     if (!mounted) return;
     setState(() {
       _chords = chords;
@@ -69,6 +72,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
       _increment = increment;
       _startKeyPc = startKeyPc;
       _reps = reps;
+      _showDots = showDots;
       _loading = false;
     });
   }
@@ -229,6 +233,20 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
                             style: TextStyle(
                                 color: AppColors.textSecondary, fontSize: 12),
                           ),
+                        ),
+                        _sectionDivider(),
+                        _sectionHeader('Challenge'),
+                        _switchTile(
+                          value: _showDots,
+                          onChanged: (v) async {
+                            setState(() => _showDots = v);
+                            await widget.settings.setRunShowDots(v);
+                            widget.onChanged();
+                          },
+                          title: 'Blue target dots',
+                          subtitle:
+                              'Highlight the keys to press on the keyboard. '
+                              'Turn off for a harder challenge.',
                         ),
                         _sectionDivider(),
                         _sectionHeader('Lifetime stats'),
