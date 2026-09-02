@@ -26,6 +26,8 @@ void main() {
     TwinDotMode twinMode = TwinDotMode.primaryAndGhost,
     KeyFeedback Function(int)? feedbackFor,
     bool Function(int)? isTargetHint,
+    Set<FretPosition>? latched,
+    ValueChanged<FretPosition>? onCellDown,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: Align(
@@ -42,6 +44,8 @@ void main() {
             isTargetHint: isTargetHint ?? (_) => false,
             onKeyDown: down.add,
             onKeyUp: up.add,
+            latched: latched,
+            onCellDown: onCellDown,
           ),
         ),
       ),
@@ -51,6 +55,58 @@ void main() {
   /// Centre of the cell drawn in string slot [slot] and fret row [row].
   Offset cell(int slot, int row) =>
       Offset((slot + 0.5) * kCell, (row + 0.5) * kCell);
+
+  group('capture mode', () {
+    testWidgets('a tap reports the cell, not the pitch', (tester) async {
+      final cells = <FretPosition>[];
+      await pump(tester, onCellDown: cells.add);
+      await tester.tapAt(cell(2, 3)); // D string, fret 3
+      await tester.pump();
+      expect(cells, [const FretPosition(2, 3)]);
+      // The parent owns the shape, so nothing is sounded or released here.
+      expect(down, isEmpty);
+      expect(up, isEmpty);
+    });
+
+    testWidgets('a second tap on a busy string is still reported',
+        (tester) async {
+      // Playing refuses it (one string sounds one note); capture needs it, so
+      // the parent can move that string's note instead of stacking on it.
+      final cells = <FretPosition>[];
+      await pump(tester, onCellDown: cells.add);
+      await tester.tapAt(cell(1, 0));
+      await tester.tapAt(cell(1, 4));
+      await tester.pump();
+      expect(cells, [const FretPosition(1, 0), const FretPosition(1, 4)]);
+    });
+
+    testWidgets('a held finger does not lock a string in capture mode',
+        (tester) async {
+      final cells = <FretPosition>[];
+      await pump(tester, onCellDown: cells.add);
+      final holding = await tester.startGesture(cell(0, 0), pointer: 1);
+      await tester.tapAt(cell(0, 2));
+      await tester.pump();
+      expect(cells.length, 2);
+      await holding.up();
+    });
+
+    testWidgets('a latched cell renders without a finger on it',
+        (tester) async {
+      // MIDI 59 sits on two cells inside frets 0-4: the open B string and the
+      // G string at fret 4. Latching pins which one.
+      const onG = FretPosition(3, 4);
+      expect(onG.midi(), 59);
+      expect(primaryFor(59, const FretBox(0)), const FretPosition(4, 0));
+      await pump(
+        tester,
+        latched: {onG},
+        feedbackFor: (n) => n == 59 ? KeyFeedback.pressed : KeyFeedback.idle,
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(tester.takeException(), isNull);
+    });
+  });
 
   group('input', () {
     testWidgets('a tap sounds the note at that cell', (tester) async {

@@ -48,6 +48,18 @@ class VoicingCaptureScreen extends StatefulWidget {
 
 class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   final Set<int> _notes = {};
+
+  /// The shape as cells, on guitar. A tapped note has to stay on the string
+  /// it was tapped on, and a MIDI number cannot say which that was — inside a
+  /// five-fret box a note can sit on two strings at once. [_notes] is derived
+  /// from this whenever it changes, so everything downstream (the readout,
+  /// the formula, the save) is unchanged.
+  final Set<FretPosition> _cells = {};
+
+  /// The window on the neck. Drills slide theirs to follow the round; capture
+  /// has no round to follow, so it opens at the nut and the player moves it.
+  FretBox _box = const FretBox(0);
+
   final TextEditingController _name = TextEditingController();
   final NotePlayer _player = NotePlayer();
   StreamSubscription<MidiNoteEvent>? _midiSub;
@@ -63,6 +75,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   int? _pickedRootPc;
 
   static const double _keyboardOctaves = 3;
+
+  /// Room for the fret-window control that sits above a guitar board.
+  static const double _boxSliderHeight = 36;
 
   bool get _isEditing => widget.existing != null;
 
@@ -95,6 +110,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
       _instrument = instrument;
       _leftHanded = leftHanded;
       _twinMode = twinMode;
+      // The instrument arrives after initState has loaded any existing
+      // shape, so the neck is seeded here rather than there.
+      _seedCells();
     });
   }
 
@@ -118,7 +136,60 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   /// Two notes is the floor — one note isn't a voicing, it's a note.
   bool get _canSave => _notes.length >= 2 && _name.text.trim().isNotEmpty;
 
+  bool get _onGuitar => _instrument == Instrument.guitar;
+
+  /// Put an already-saved shape on the neck when the screen opens on guitar.
+  /// Nothing to do when it cannot be held — the board simply starts empty and
+  /// the piano readout below still shows what the voicing is.
+  void _seedCells() {
+    if (!_onGuitar || _notes.isEmpty) return;
+    final shape = fit(_sorted);
+    if (shape == null) return;
+    _cells
+      ..clear()
+      ..addAll(shape.positions);
+    _box = shape.box();
+    _syncNotes();
+  }
+
+  void _syncNotes() => _notes
+    ..clear()
+    ..addAll(_cells.map((c) => c.midi()));
+
+  /// One note per string: a second tap on a string moves that string's note
+  /// rather than stacking on it, and tapping a lit cell takes it off. This is
+  /// what makes a captured guitar shape playable by construction — six
+  /// strings, one finger each, inside a five-fret window.
+  void _tapCell(FretPosition cell) {
+    final removing = _cells.contains(cell);
+    if (!removing && _noteSound) _player.play(cell.midi());
+    setState(() {
+      if (removing) {
+        _cells.remove(cell);
+      } else {
+        _cells.removeWhere((c) => c.string == cell.string);
+        _cells.add(cell);
+      }
+      _syncNotes();
+    });
+  }
+
+  void _slideBox(int by) => setState(() {
+        _box = FretBox(
+          (_box.start + by).clamp(0, kMaxFret - _box.width + 1),
+          _box.width,
+        );
+      });
+
   void _toggle(int midiNote) {
+    // A note arriving over MIDI has no cell of its own, so on guitar it takes
+    // the one the board would light for it. Out of the window it is dropped:
+    // capture cannot hold a shape it is not showing.
+    if (_onGuitar) {
+      final cell = primaryFor(midiNote, _box);
+      if (cell != null) _tapCell(cell);
+      return;
+    }
     final adding = !_notes.contains(midiNote);
     if (adding && _noteSound) _player.play(midiNote);
     setState(() => adding ? _notes.add(midiNote) : _notes.remove(midiNote));
@@ -126,6 +197,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
 
   void _clear() => setState(() {
         _notes.clear();
+        _cells.clear();
         _pickedRootPc = null;
       });
 
@@ -458,32 +530,81 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
     );
   }
 
+  /// Slide the window along the neck. The only control of its kind in the
+  /// app — every drill knows which frets it wants, capture does not.
+  Widget _buildBoxSlider() {
+    const height = _boxSliderHeight;
+    return SizedBox(
+      height: height,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            onPressed: _box.start == 0 ? null : () => _slideBox(-1),
+            icon: const Icon(Icons.remove, size: 18),
+            color: AppColors.textSecondary,
+            tooltip: 'Toward the nut',
+            visualDensity: VisualDensity.compact,
+          ),
+          SizedBox(
+            width: 74,
+            child: Text(
+              'Frets ${_box.start}-${_box.end}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontFeatures: tabularFigures,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: _box.end >= kMaxFret ? null : () => _slideBox(1),
+            icon: const Icon(Icons.add, size: 18),
+            color: AppColors.textSecondary,
+            tooltip: 'Up the neck',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildKeyboard(double height) {
     final compact = isCompactLayout(MediaQuery.of(context).size.height);
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        child: SizedBox(
-          height: height,
-          child: RepaintBoundary(
-            child: InstrumentSurface(
-              instrument: _instrument,
-              lowMidi: kVoicingKeyboardLow,
-              octaves: _keyboardOctaves,
-              anchor: _sorted,
-              feedbackFor: (n) => _notes.contains(n)
-                  ? KeyFeedback.pressed
-                  : KeyFeedback.idle,
-              isTargetHint: (_) => false,
-              onKeyDown: _toggle,
-              // Latching: the note stays on when the finger comes off.
-              onKeyUp: (_) {},
-              compact: compact,
-              leftHanded: _leftHanded,
-              twinMode: _twinMode,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_onGuitar) _buildBoxSlider(),
+            SizedBox(
+              height: _onGuitar ? height - _boxSliderHeight : height,
+              child: RepaintBoundary(
+                child: InstrumentSurface(
+                  instrument: _instrument,
+                  lowMidi: kVoicingKeyboardLow,
+                  octaves: _keyboardOctaves,
+                  anchor: _sorted,
+                  box: _onGuitar ? _box : null,
+                  latched: _onGuitar ? _cells : null,
+                  onCellDown: _onGuitar ? _tapCell : null,
+                  feedbackFor: (n) => _notes.contains(n)
+                      ? KeyFeedback.pressed
+                      : KeyFeedback.idle,
+                  isTargetHint: (_) => false,
+                  onKeyDown: _toggle,
+                  // Latching: the note stays on when the finger comes off.
+                  onKeyUp: (_) {},
+                  compact: compact,
+                  leftHanded: _leftHanded,
+                  twinMode: _twinMode,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

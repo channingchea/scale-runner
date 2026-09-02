@@ -39,6 +39,8 @@ class InstrumentSurface extends StatelessWidget {
     this.leftHanded = false,
     this.twinMode = TwinDotMode.primaryAndGhost,
     this.showLabels = true,
+    this.latched,
+    this.onCellDown,
   });
 
   final Instrument instrument;
@@ -59,6 +61,12 @@ class InstrumentSurface extends StatelessWidget {
   final bool leftHanded;
   final TwinDotMode twinMode;
   final bool showLabels;
+
+  /// Guitar capture: the cells the parent is holding lit, and where taps go.
+  /// Both meaningless on the piano, where a note is one key and latching is
+  /// just a set of pitches. See [FretboardView.latched].
+  final Set<FretPosition>? latched;
+  final ValueChanged<FretPosition>? onCellDown;
 
   @override
   Widget build(BuildContext context) {
@@ -85,6 +93,8 @@ class InstrumentSurface extends StatelessWidget {
       leftHanded: leftHanded,
       twinMode: twinMode,
       showLabels: showLabels,
+      latched: latched,
+      onCellDown: onCellDown,
     );
   }
 }

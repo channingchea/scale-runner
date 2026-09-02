@@ -136,6 +136,21 @@ void main() {
     });
   });
 
+  group('range below the piano', () {
+    test('the low E frets 0-7 are audible and judge by pitch class', () {
+      // MIDI 40-47 sits below every drill's keyboard, which starts at 48.
+      // Nothing clamps them: they are ordinary notes that happen to be low.
+      for (var fret = 0; fret <= 7; fret++) {
+        final midi = t.midiAt(0, fret);
+        expect(midi, 40 + fret);
+        expect(midi, greaterThanOrEqualTo(NotePlayer.lowMidi));
+        expect(midi, lessThanOrEqualTo(NotePlayer.highMidi));
+        // The same pitch class as its octave inside the drill range.
+        expect(midi % 12, (midi + 12) % 12);
+      }
+    });
+  });
+
   group('boxAtRoot', () {
     test('every key root lands on the A string at fret 3 or higher', () {
       for (var pc = 0; pc < 12; pc++) {

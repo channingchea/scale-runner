@@ -70,6 +70,8 @@ class FretboardView extends StatefulWidget {
     this.leftHanded = false,
     this.twinMode = TwinDotMode.primaryAndGhost,
     this.showLabels = true,
+    this.latched,
+    this.onCellDown,
   });
 
   /// The window of frets on screen. Drills slide it with [boxFor].
@@ -89,6 +91,25 @@ class FretboardView extends StatefulWidget {
 
   final TwinDotMode twinMode;
   final bool showLabels;
+
+  /// Cells the parent is holding lit with no finger on them.
+  ///
+  /// Capture is not playing. A tapped note stays on after the finger leaves,
+  /// and it has to stay on *the string it was tapped on* — which a MIDI
+  /// number cannot say, since a note inside a five-fret box can sit on two
+  /// strings at once. So capture keeps its shape as cells and hands it back
+  /// here; a cell listed here lights exactly where it is, instead of falling
+  /// through to [primaryFor] like a note arriving over MIDI.
+  final Set<FretPosition>? latched;
+
+  /// Set to take taps as cells rather than as pitches.
+  ///
+  /// When this is set the view stops modelling presses at all — no
+  /// ref-counting, no one-finger-per-string rule, no [onKeyUp] — and simply
+  /// reports the cell tapped. The parent owns the shape and decides what a
+  /// second tap on an occupied string means. [onKeyDown] and [onKeyUp] are
+  /// not called on touch in this mode.
+  final ValueChanged<FretPosition>? onCellDown;
 
   @override
   State<FretboardView> createState() => _FretboardViewState();
@@ -185,9 +206,15 @@ class _FretboardViewState extends State<FretboardView>
 
   void _onDown(PointerDownEvent e) {
     final cell = _geometry?.hitTest(e.localPosition);
+    if (cell == null) return;
+    final capture = widget.onCellDown;
+    if (capture != null) {
+      capture(cell);
+      return;
+    }
     // A string already under a finger takes no second one, the way a real
     // string only sounds one note.
-    if (cell == null || _stringIsBusy(cell.string)) return;
+    if (_stringIsBusy(cell.string)) return;
     final down = _addPointer(e.pointer, cell);
     setState(() {});
     if (down != null) widget.onKeyDown(down);
@@ -222,7 +249,7 @@ class _FretboardViewState extends State<FretboardView>
   Map<FretPosition, Color> _glowTargets() {
     final out = <FretPosition, Color>{};
     final touched = <int, List<FretPosition>>{};
-    for (final cell in _pointers.values) {
+    for (final cell in [..._pointers.values, ...?widget.latched]) {
       touched.putIfAbsent(cell.midi(widget.tuning), () => []).add(cell);
     }
     for (var midi = widget.tuning.lowest;
