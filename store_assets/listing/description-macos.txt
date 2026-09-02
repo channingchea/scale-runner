@@ -1,0 +1,50 @@
+Scale Runner turns music theory into something you play, not something you read.
+
+Pick a mode and the app names a scale or a chord. You answer on a MIDI keyboard or the on-screen keys, and every note is checked as you play it. In the timed modes it checks when you played, too, against a metronome that never drifts.
+
+SIX WAYS TO PRACTICE
+• Scales: play scales from a random key, note by note
+• Chords: build the named chord, holding all the notes at once
+• Voicings: capture a shape you like, then play it in all 12 keys
+• Scale Running: hold chords and run their modes in time, key by key
+• Inversion Running: walk a chord up its inversions an octave and back down
+• Jam Mode: comp diatonic chords in time, one per bar, in a single key
+
+VOICINGS: YOUR SHAPES, IN EVERY KEY
+Play a voicing you want to own, say a drop 2, a rootless 13th or a stack of fourths. Tap its root and Scale Runner spells the shape out in degrees from the bass up. Name it, then drill it around all 12 keys. It is judged by shape rather than exact pitches, so you can play it wherever it falls under your hands, in any octave. Keep a library in order with folders, colour tags, text tags, search and drag-to-reorder. Three saved voicings free, unlimited with Pro.
+
+INVERSION RUNNING: ONE CHORD, TOP TO BOTTOM
+Walk a chord up through every inversion to the octave and back down, so your hand moves through the positions instead of jumping between them. The keyboard transposes to each new root, so the shape stays where you can see it. Run it untimed to build the map, or start the metronome and be judged a position per beat.
+
+JAM MODE: COMPING IN TIME
+Stay in one key and comp its diatonic chords against the click, one per bar. Follow the changes the app calls, or switch to freestyle and pick your own way through the key while it scores what you land on. Loosen it with "any chord tones", which accepts any voicing of three or more notes with the root in the bass, so the way you actually comp counts, not just textbook triads. Sessions run for as many bars as you set, after a counted-in start.
+
+SCALE RUNNING: CHORDS AND MODES AT ONCE
+Hold the diatonic chord in one hand and run its mode in the other, one note per beat, bar after bar, through a progression and around the keys. Set the progression, triads or sevenths, passes per key, and whether keys move chromatically or by fifths.
+
+WHAT'S COVERED
+• 25 scales: all 21 modes of the major, harmonic minor and melodic minor scales, plus both pentatonics, blues and chromatic
+• 13 chord types: triads, sixths, sevenths, sus and diminished
+• All 12 keys, cycled chromatically or by fifths
+• 5 progression presets, including 12-bar blues, as triads or sevenths
+
+PLAY IT YOUR WAY
+Connect any class-compliant MIDI keyboard over USB or Bluetooth and the app remembers it, reconnecting on its own next time. The on-screen keys cover single notes, but a mouse presses one at a time, so the chord and voicing modes want a real keyboard.
+
+TIMING YOU CAN TRUST
+The metronome runs on absolute time, so it stays honest from 40 to 240 BPM. A quick calibration measures your audio and Bluetooth latency and subtracts it, so an on-beat press reads as on-beat. Set the windows to Easy, Normal or Strict.
+
+KEEP THE HABIT
+Daily streaks with milestones, reminders at a time you choose, and per-key, per-chord and per-mode stats that show what you have actually drilled.
+
+PRACTICE WITH FRIENDS (OPTIONAL)
+Sign in to back up your streak, invite friends, applaud their practice and compare streaks. Only your display name, avatar and streak are shared, and only with friends you invite. Everything else works signed out and offline.
+
+SCALE RUNNER PRO
+A one-time unlock, yours forever on all your devices:
+• Scale Running, Inversion Running and Jam Mode, unlimited
+• Full progression presets, sevenths and key cycles
+• Unlimited saved voicings
+• Streak protection: one missed day a week is repaired automatically
+
+Every timed mode is free to try three times before you decide.
