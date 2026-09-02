@@ -312,39 +312,89 @@ unit-testable. All guitar-specific ambiguity lives here.
   `test/instrument_settings_test.dart` (the three new settings round-trip).
   530 tests pass, `flutter analyze` clean.
 
-## Phase 5: Per-mode reconciliation
-- [ ] **Quiz (Scales + Chords)**: anchor = `targetNotes`. Box from `boxFor`.
+## Phase 5: Per-mode reconciliation — DONE 2026-09-02
+- [x] **Quiz (Scales + Chords)**: anchor = `targetNotes`. Box from `boxFor`.
       Scales are sequential by pitch class, so any position of the next note
       counts. Verify all dots for a round land in-box.
-- [ ] **Scale Running**: anchor = the step's chord pitch classes + run pitch
+- [x] **Scale Running**: anchor = the step's chord pitch classes + run pitch
       classes, placed from the key root's position on the A string (frets
       3-14). Box slides when the key changes, never mid-run. Hints stay pitch
       class but are drawn only inside the box.
-- [ ] **Jam Mode**: anchor = the jam key; box from the key root on the A
+- [x] **Jam Mode**: anchor = the jam key; box from the key root on the A
       string. Freestyle paints the whole scale, so the box is what keeps it
       readable. "Any chord tones" needs 3+ notes with the root lowest, which
       is a three-finger chord in the box; confirm on hardware.
-- [ ] **Inversion Running**: `InversionCycle(..., instrument: guitar)` from
+- [x] **Inversion Running**: `InversionCycle(..., instrument: guitar)` from
       Phase 2. The piano transposes its keyboard per round; on guitar the box
       slides to the step's fit. `currentVoicingHeld` (pitch classes + lowest
       held note's pitch class) is unchanged and still correct, because the
       lowest MIDI note means the same thing on both instruments. Step labels
       and formulas unchanged.
-- [ ] **Voicings drill**: **no re-voicing.** `matches` is exact-interval, so
+- [x] **Voicings drill**: **no re-voicing.** `matches` is exact-interval, so
       the fretboard shows the shape exactly where `fit(currentStep.notes,
       adjacentOnly: false)` puts it (the whole shape may move by an octave;
       `matches` is octave-agnostic). If `fit` returns null the drill shows
       "This voicing does not fit under a hand on guitar" with a button to
       drill it on piano. Dots slide up the neck key by key, which is the
       most idiomatic thing in the whole feature.
-- [ ] **Voicings capture on guitar**: latching taps, **one note per string**
+- [x] **Voicings capture on guitar**: latching taps, **one note per string**
       (a second tap on the same string moves the note; tapping the lit cell
       removes it). Box starts at frets 0-4 and the user can slide it (a
       small up/down control, since there is no drill to anchor it). Span is
       guaranteed playable because it was built on the board.
-- [ ] **Range**: taps at MIDI 40-47 (low E frets 0-7) are below every
+- [x] **Range**: taps at MIDI 40-47 (low E frets 0-7) are below every
       drill's range; they judge by pitch class like any other note and now
       make sound (Phase 0). Nothing needs clamping.
+
+### What this phase corrected in the plan
+- **`fit` was never being used.** Phase 4 gave every screen the same box:
+  `boxFor(anchor)`. That only promises each note has *some* position inside
+  the window, which for a chord regularly means two notes stacked on one
+  string — a close C maj7 puts two of its four notes on the high E. Measured
+  across Inversion Running, `boxFor` and the shape `fit` proves playable
+  disagree on **7 of 7** steps for a G major triad, 9 of 9 for C maj7. The
+  plan assumed placement was already solved by Phase 2/3; it was solved in
+  the theory core and never reached the screen. New `boxForShape` (fit first,
+  `boxFor` fallback) is now what Inversion Running and the Voicings drill
+  draw with, and `InstrumentSurface` gained an optional `box` to carry it.
+- **The pitch-class drills' box moved every beat.** Scale Running's anchor
+  is scanned out of `isTargetHint`, which includes the *current beat's* run
+  pitch class — so the window walked around under the hand. Replaying C
+  major, degree 1's bar alone moved the box across starts 0,0,0,0,0,1,3,0.
+  Jam Mode was worse: the board snapped back to the nut between chord
+  prompts, since an idle prompt makes the anchor empty. New `boxAtRoot(pc)`
+  places the window from the key root on the A string (frets 3-14, opening
+  one fret below the root), so it moves on a key change and at no other time.
+  The plan called for this; what it did not anticipate is that the anchor
+  scan had to stop being the source, not just be recomputed less often.
+- **Capture was latching the wrong unit.** The plan said "latching taps, one
+  note per string" as if it were a rule to add. It was a change of model: the
+  screen latched MIDI numbers, and inside a five-fret window a note can sit
+  on two strings, so a dot could reappear on a string the player never
+  tapped. `FretboardView` gained a capture mode (`onCellDown` + `latched`)
+  and the screen now owns a `Set<FretPosition>`, deriving its note set from
+  it. The plan's "span is guaranteed playable because it was built on the
+  board" only becomes true once the shape *is* cells.
+- **The Voicings drill's "does not fit" case is asked of the cycle, not the
+  step.** Per-step would make the board vanish and come back mid-drill. A
+  shape is either drillable on a neck for the whole cycle or it is not. In
+  practice `fit(adjacentOnly: false)` returns non-null for every ordinary
+  shape sampled (close maj7, drop 2, shell, 1-5-10, quartal, all 25 steps),
+  so the branch is for wide user-captured shapes, not common ones — but it
+  is needed, because otherwise `boxFor` degrades silently and simply hides
+  the notes it cannot reach.
+- **The quiz needed nothing.** `boxFor(targetNotes)` was already right there:
+  a five-fret box holds every round the app can generate, which
+  `fretboard_test.dart` already pinned. Left alone deliberately.
+- **Range needed nothing either** — confirmed by reading rather than by
+  changing. Nothing in `lib/` clamps a note number; the only `clamp` calls
+  touch bars, indices, BPM and geometry. Now pinned by a test.
+- **No screen-level guitar test existed.** Every Phase 5 behaviour was
+  green-field. Added `test/voicing_capture_guitar_test.dart`, which drives
+  the real screen through the per-cell semantics nodes rather than by
+  coordinate — the board is centred at a capped size and lies flat as a neck
+  on desktop, so an offset-based tap would be testing the layout maths.
+  546 tests pass, `flutter analyze` clean.
 
 ## Phase 6: Voicings instrument tag
 - [ ] `VoicingSpec.instrument` (`Instrument`, default piano when decoding
