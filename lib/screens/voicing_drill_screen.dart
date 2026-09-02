@@ -70,6 +70,28 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
   int _startPc = 0;
   KeyIncrement _increment = KeyIncrement.chromatic;
 
+  /// Set when the player taps "Drill on piano" past a shape no hand can hold
+  /// on a neck. Local to this screen — it does not touch the global
+  /// Instrument setting, because the answer is about this one voicing.
+  bool _pianoOverride = false;
+
+  Instrument get _surface =>
+      _pianoOverride ? Instrument.piano : _instrument;
+
+  /// True when the guitar cannot hold this voicing in some key of the cycle.
+  ///
+  /// Asked of the whole run rather than the current step, so the board does
+  /// not vanish and come back mid-drill: a shape is either drillable on a
+  /// neck for this cycle or it is not. [VoicingSpec.matches] is
+  /// octave-agnostic, so the shape is free to sit wherever [fit] puts it —
+  /// but when it puts it nowhere, drawing a degraded box would show dots the
+  /// player cannot physically hold together.
+  bool get _unplayableOnGuitar {
+    final c = _controller;
+    if (_surface != Instrument.guitar || c == null) return false;
+    return c.steps.any((s) => !fits(s.notes));
+  }
+
   /// Fixed 3-octave keyboard (C3–C6) — wide enough for the shape to climb an
   /// octave and back without transposing the display.
   static const double _keyboardOctaves = 3;
@@ -260,7 +282,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
                     // never would: a bigger cell is just easier to tap, and
                     // a tall diagram doesn't look odd the way a tall piano
                     // would.
-                    final keyboardHeight = _instrument == Instrument.guitar &&
+                    final keyboardHeight = _surface == Instrument.guitar &&
                             !compact
                         ? (bodyHeight * 0.62).clamp(280.0, bodyHeight * 0.72)
                         : compact
@@ -477,6 +499,47 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
 
   Widget _buildKeyboard(
       VoicingRunController c, double height, bool compact) {
+    if (_unplayableOnGuitar) {
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.pan_tool_outlined,
+                    color: AppColors.textMuted, size: 32),
+                const SizedBox(height: 12),
+                const Text(
+                  'This voicing does not fit under a hand on guitar',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Its notes are spread wider than six strings can hold in '
+                  'every key of the cycle.',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => setState(() => _pianoOverride = true),
+                  icon: const Icon(Icons.piano_outlined),
+                  label: const Text('Drill it on piano'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return SafeArea(
       top: false,
       child: Padding(
@@ -485,11 +548,17 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
           height: height,
           child: RepaintBoundary(
             child: InstrumentSurface(
-              instrument: _instrument,
+              instrument: _surface,
               // Fixed for the session — the shape moves, the keyboard doesn't.
               lowMidi: c.lowMidi,
               octaves: _keyboardOctaves,
               anchor: c.currentStep.notes,
+              // Drawn where the shape is held, not merely where its notes are
+              // reachable. adjacentOnly stays off: an open shape like 1-5-10
+              // legitimately skips a string.
+              box: _surface == Instrument.guitar
+                  ? boxForShape(c.currentStep.notes)
+                  : null,
               feedbackFor: c.feedbackFor,
               isTargetHint:
                   (_showDots && c.running) ? c.isTargetHint : (_) => false,

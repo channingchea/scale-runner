@@ -256,6 +256,44 @@ FretBox boxFor(
   return best;
 }
 
+/// The string a key's root is measured from when a drill anchors its box.
+///
+/// The A string. Low E would put the common keys at the nut, where the box
+/// cannot show anything below the root; from A, every root lands at fret 3 or
+/// higher and the box keeps a fret of room underneath it.
+const int kRootAnchorString = 1;
+
+/// The window to open for a whole key, placed at [rootPc]'s own position on
+/// the A string.
+///
+/// For drills that judge by pitch class over a whole scale, the set of lit
+/// notes changes every beat, so a box derived from the notes themselves
+/// (via [boxFor]) walks around underneath the player. This is derived from
+/// the key instead, so it moves when the key moves and not before.
+///
+/// The root is forced into [minFret]..[maxFret] — an octave up from the nut
+/// when it would otherwise sit open — and the box opens one fret below it, so
+/// the root sits a finger in rather than against the edge.
+FretBox boxAtRoot(
+  int rootPc, {
+  int string = kRootAnchorString,
+  int minFret = 3,
+  int maxFret = kComfortFret - 1,
+  int width = kBoxWidth,
+  Tuning tuning = Tuning.standard,
+  int neckFrets = kMaxFret,
+}) {
+  var fret = (rootPc - tuning.openStrings[string]) % 12;
+  while (fret < minFret) {
+    fret += 12;
+  }
+  while (fret > maxFret) {
+    fret -= 12;
+  }
+  final start = fret - 1;
+  return FretBox(start < 0 ? 0 : start, width).clamped(maxFret: neckFrets);
+}
+
 /// Place [notes] under one hand: one note per string, ascending pitch on
 /// ascending strings, everything within [maxSpan] frets of everything else.
 ///
@@ -320,6 +358,52 @@ FretShape? fit(
   search(0, 0);
   return best;
 }
+
+/// The window to open for one chord shape: the box around the placement
+/// [fit] chooses, so what is drawn is a hand and not merely a set of
+/// reachable notes.
+///
+/// [boxFor] only promises each note has *some* position inside the window.
+/// For a chord that regularly means two notes stacked on one string — a C
+/// maj7 close voicing lands two of its four notes on the high E — which is
+/// not a shape anyone can hold. Falls back to [boxFor] when the notes cannot
+/// be held at all, so a drill degrades to "reachable" instead of blanking;
+/// [fits] is the same question asked on its own, for a screen that wants to
+/// say so rather than degrade.
+FretBox boxForShape(
+  List<int> notes, {
+  bool adjacentOnly = false,
+  int maxSpan = kBoxWidth - 1,
+  Tuning tuning = Tuning.standard,
+  int maxFret = kMaxFret,
+}) {
+  final shape = fit(
+    notes,
+    adjacentOnly: adjacentOnly,
+    maxSpan: maxSpan,
+    tuning: tuning,
+    maxFret: maxFret,
+  );
+  return shape?.box(maxFret: maxFret) ??
+      boxFor(notes, tuning: tuning, maxFret: maxFret);
+}
+
+/// Whether [notes] can be held on the neck at all. See [boxForShape].
+bool fits(
+  List<int> notes, {
+  bool adjacentOnly = false,
+  int maxSpan = kBoxWidth - 1,
+  Tuning tuning = Tuning.standard,
+  int maxFret = kMaxFret,
+}) =>
+    fit(
+      notes,
+      adjacentOnly: adjacentOnly,
+      maxSpan: maxSpan,
+      tuning: tuning,
+      maxFret: maxFret,
+    ) !=
+    null;
 
 /// Textbook drop 2: the second note from the top falls an octave.
 ///

@@ -16,6 +16,13 @@ import 'piano_keyboard.dart';
 /// show via [boxFor]. Pass every note the round can highlight, even ones
 /// currently hidden by a hint-dots setting, so the box doesn't jump when
 /// hints are toggled on.
+///
+/// [box] overrides that derivation entirely, for the drills where the notes
+/// are the wrong thing to derive it from. Two cases: a chord shape wants
+/// [boxForShape], since [boxFor] will happily stack two of its notes on one
+/// string; and a pitch-class drill wants [boxAtRoot], since the lit set
+/// changes every beat and a derived box would walk around under the player.
+/// Piano ignores it like everything else here.
 class InstrumentSurface extends StatelessWidget {
   const InstrumentSurface({
     super.key,
@@ -23,6 +30,7 @@ class InstrumentSurface extends StatelessWidget {
     required this.lowMidi,
     required this.octaves,
     required this.anchor,
+    this.box,
     required this.feedbackFor,
     required this.isTargetHint,
     required this.onKeyDown,
@@ -37,6 +45,9 @@ class InstrumentSurface extends StatelessWidget {
   final int lowMidi;
   final double octaves;
   final List<int> anchor;
+
+  /// The window of frets to show, when the screen knows better than [anchor].
+  final FretBox? box;
   final KeyFeedback Function(int midiNote) feedbackFor;
   final bool Function(int midiNote) isTargetHint;
   final ValueChanged<int> onKeyDown;
@@ -63,7 +74,7 @@ class InstrumentSurface extends StatelessWidget {
       );
     }
     return FretboardView(
-      box: boxFor(anchor),
+      box: box ?? boxFor(anchor),
       feedbackFor: feedbackFor,
       isTargetHint: isTargetHint,
       onKeyDown: onKeyDown,

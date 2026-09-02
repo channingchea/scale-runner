@@ -78,6 +78,11 @@ class VoicingRunController extends ChangeNotifier {
   VoicingStep get currentStep =>
       _cycle.steps[_stepIndex.clamp(0, stepCount - 1)];
 
+  /// Every step of the cycle, in order. The screen needs the whole run up
+  /// front to answer instrument questions the drill itself stays out of —
+  /// whether a guitar can hold this shape in all twelve keys, say.
+  List<VoicingStep> get steps => _cycle.steps;
+
   /// Key name for the prompt, e.g. "F#".
   String get keyLabel => currentStep.label;
 

@@ -561,6 +561,13 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
               lowMidi: c.lowMidi,
               octaves: _keyboardOctaves.toDouble(),
               anchor: c.currentStep.notes,
+              // Every step of a guitar cycle is a proven adjacent-string
+              // shape, so draw it where it is actually held. boxFor would
+              // only promise the notes are reachable, which for a 7th chord
+              // means stacking two of them on one string.
+              box: _instrument == Instrument.guitar
+                  ? boxForShape(c.currentStep.notes, adjacentOnly: true)
+                  : null,
               feedbackFor: c.feedbackFor,
               isTargetHint: (_showDots && (c.running || c.countingIn))
                   ? c.isTargetHint

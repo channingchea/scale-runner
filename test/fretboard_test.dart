@@ -136,6 +136,69 @@ void main() {
     });
   });
 
+  group('boxAtRoot', () {
+    test('every key root lands on the A string at fret 3 or higher', () {
+      for (var pc = 0; pc < 12; pc++) {
+        final box = boxAtRoot(pc);
+        final rootFret = box.start + 1;
+        expect(rootFret, greaterThanOrEqualTo(3),
+            reason: 'pc $pc anchored at fret $rootFret');
+        expect(rootFret, lessThanOrEqualTo(kComfortFret - 1));
+        expect(Tuning.standard.midiAt(kRootAnchorString, rootFret) % 12, pc);
+        expect(box.contains(rootFret), isTrue);
+        expect(box.width, kBoxWidth);
+      }
+    });
+
+    test('the familiar positions come out where a player expects them', () {
+      expect(boxAtRoot(0), const FretBox(2)); // C, frets 2-6
+      expect(boxAtRoot(7), const FretBox(9)); // G, frets 9-13
+      expect(boxAtRoot(4), const FretBox(6)); // E, frets 6-10
+    });
+
+    test('the box depends on the key alone, never on which notes are lit', () {
+      // The whole point: two different moments in the same key agree.
+      expect(boxAtRoot(0), boxAtRoot(0));
+      expect(boxAtRoot(0) == boxAtRoot(2), isFalse);
+    });
+  });
+
+  group('boxForShape', () {
+    test('a close maj7 is drawn as a hand, not as two notes on one string', () {
+      const notes = [60, 64, 67, 71];
+      // boxFor only promises reachability, and here that stacks two notes on
+      // the high E. The fitted box is the shape you can actually hold.
+      final shape = fit(notes)!;
+      expect(boxForShape(notes), shape.box());
+      final strings = shape.positions.map((p) => p.string).toSet();
+      expect(strings.length, notes.length);
+    });
+
+    test('every Inversion Running step is drawn at its playable shape', () {
+      for (final chord in commonChords) {
+        for (var rootPc = 0; rootPc < 12; rootPc++) {
+          final cycle =
+              InversionCycle(chord, rootPc, instrument: Instrument.guitar);
+          for (final step in cycle.steps) {
+            expect(fits(step.notes, adjacentOnly: true), isTrue,
+                reason: '${chord.name} $rootPc: ${step.notes} does not fit');
+            final box = boxForShape(step.notes, adjacentOnly: true);
+            final shape = fit(step.notes, adjacentOnly: true)!;
+            for (final pos in shape.positions) {
+              expect(box.contains(pos.fret), isTrue);
+            }
+          }
+        }
+      }
+    });
+
+    test('an unholdable shape degrades to boxFor rather than blanking', () {
+      const spread = [48, 60, 72, 84]; // three octaves, no hand covers it
+      expect(fits(spread), isFalse);
+      expect(boxForShape(spread), boxFor(spread));
+    });
+  });
+
   group('hint density in a box', () {
     test('a scale paints at most 20 dots, against 15-ish on the piano', () {
       // This is the number that makes the box mandatory: the same pitch-class

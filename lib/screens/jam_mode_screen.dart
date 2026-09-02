@@ -658,6 +658,13 @@ class _JamModeScreenState extends State<JamModeScreen> {
                     m++)
                   if (c.isTargetHint(m)) m,
               ],
+              // Pitch-class drills light a different set of cells every
+              // beat, so a box derived from them walks around under the
+              // player's hand. Anchored to the key instead: it moves when the
+              // key moves, and not before.
+              box: _instrument == Instrument.guitar
+                  ? boxAtRoot(c.keyPc)
+                  : null,
               feedbackFor: c.feedbackFor,
               isTargetHint: (_showDots && active && c.running)
                   ? c.isTargetHint
