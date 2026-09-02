@@ -14,9 +14,11 @@ import '../runner/beat_debug.dart';
 import '../runner/scale_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/instrument_surface.dart';
 import '../widgets/metronome_bar.dart';
-import '../widgets/piano_keyboard.dart';
 import '../widgets/rotate_hint_banner.dart';
 import '../widgets/reminder_prompt_sheet.dart';
 import '../widgets/scale_run_session_summary_sheet.dart';
@@ -41,6 +43,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   bool _showDots = true;
   MetronomeController? _metronome;
   bool _noteSound = true;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -98,6 +103,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     metronome.stop();
     _noteSound = await settings.noteSoundEnabled();
     _showDots = await settings.runShowDots();
+    _instrument = await settings.instrument();
+    _leftHanded = await settings.leftHanded();
+    _twinMode = await settings.guitarTwinMode();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
@@ -254,7 +262,8 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
                           ListenableBuilder(
                             listenable: controller,
                             builder: (context, _) =>
-                                _buildKeyboard(controller, keyboardHeight),
+                                _buildKeyboard(
+                                    controller, keyboardHeight, compact),
                           ),
                         ],
                       ),
@@ -576,7 +585,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     );
   }
 
-  Widget _buildKeyboard(ScaleRunController c, double height) {
+  Widget _buildKeyboard(ScaleRunController c, double height, bool compact) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -584,13 +593,25 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
         child: SizedBox(
           height: height,
           child: RepaintBoundary(
-            child: PianoKeyboard(
+            child: InstrumentSurface(
+              instrument: _instrument,
               lowMidi: QuizController.keyboardLowMidi,
               octaves: QuizController.keyboardOctaves.toDouble(),
+              anchor: [
+                for (var m = QuizController.keyboardLowMidi;
+                    m <
+                        QuizController.keyboardLowMidi +
+                            QuizController.keyboardOctaves * 12;
+                    m++)
+                  if (c.isTargetHint(m)) m,
+              ],
               feedbackFor: c.feedbackFor,
               isTargetHint: _showDots ? c.isTargetHint : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
+              compact: compact,
+              leftHanded: _leftHanded,
+              twinMode: _twinMode,
             ),
           ),
         ),

@@ -11,9 +11,11 @@ import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
 import '../streak/streak_service.dart';
+import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/instrument_surface.dart';
 import '../widgets/metronome_bar.dart';
-import '../widgets/piano_keyboard.dart';
 import '../widgets/quiz_settings_sheet.dart';
 import '../widgets/reminder_prompt_sheet.dart';
 import '../widgets/rotate_hint_banner.dart';
@@ -39,6 +41,9 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _statsBar = true;
   bool _beatIndicator = true;
   bool _noteSound = true;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the beat indicator's latency correction can
@@ -66,6 +71,9 @@ class _QuizScreenState extends State<QuizScreen> {
     final statsBar = await settings.statsBarEnabled(widget.mode);
     final beatIndicator = await settings.beatIndicatorEnabled(widget.mode);
     final noteSound = await settings.noteSoundEnabled();
+    final instrument = await settings.instrument();
+    final leftHanded = await settings.leftHanded();
+    final twinMode = await settings.guitarTwinMode();
     // Restore the persisted session stats before building the controller.
     _carryScore = await settings.quizScore(widget.mode);
     _carryBestStreak = await settings.quizBestStreak(widget.mode);
@@ -102,6 +110,9 @@ class _QuizScreenState extends State<QuizScreen> {
         _statsBar = statsBar;
         _beatIndicator = beatIndicator;
         _noteSound = noteSound;
+        _instrument = instrument;
+        _leftHanded = leftHanded;
+        _twinMode = twinMode;
       });
     }
   }
@@ -263,7 +274,7 @@ class _QuizScreenState extends State<QuizScreen> {
                           Expanded(
                             child: _buildPrompt(context, controller, compact),
                           ),
-                          _buildKeyboard(controller, keyboardHeight),
+                          _buildKeyboard(controller, keyboardHeight, compact),
                         ],
                       ),
                     );
@@ -498,7 +509,7 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Widget _buildKeyboard(QuizController c, double height) {
+  Widget _buildKeyboard(QuizController c, double height, bool compact) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -506,13 +517,18 @@ class _QuizScreenState extends State<QuizScreen> {
         child: SizedBox(
           height: height,
           child: RepaintBoundary(
-            child: PianoKeyboard(
+            child: InstrumentSurface(
+              instrument: _instrument,
               lowMidi: QuizController.keyboardLowMidi,
               octaves: QuizController.keyboardOctaves.toDouble(),
+              anchor: c.targetNotes,
               feedbackFor: c.feedbackFor,
               isTargetHint: _dotsHint ? c.isTargetHint : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
+              compact: compact,
+              leftHanded: _leftHanded,
+              twinMode: _twinMode,
             ),
           ),
         ),

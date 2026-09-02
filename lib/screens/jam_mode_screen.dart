@@ -13,11 +13,13 @@ import '../runner/beat_debug.dart';
 import '../runner/jam_mode_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/instrument_surface.dart';
 import '../widgets/jam_mode_settings_sheet.dart';
 import '../widgets/jam_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
-import '../widgets/piano_keyboard.dart';
 import '../widgets/reminder_prompt_sheet.dart';
 import '../widgets/rotate_hint_banner.dart';
 import '../widgets/streak_sheets.dart';
@@ -43,6 +45,9 @@ class _JamModeScreenState extends State<JamModeScreen> {
   bool _showDots = true;
   bool _showFormula = true;
   bool _countInNumbers = true;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -106,6 +111,9 @@ class _JamModeScreenState extends State<JamModeScreen> {
     _showDots = await settings.jamShowDots();
     _showFormula = await settings.jamShowFormula();
     _countInNumbers = await settings.jamCountInNumbers();
+    _instrument = await settings.instrument();
+    _leftHanded = await settings.leftHanded();
+    _twinMode = await settings.guitarTwinMode();
     final keyPc = await settings.jamKeyPc();
     final families = await settings.jamFamilies();
     final sessionBars = await settings.jamSessionBars();
@@ -258,7 +266,8 @@ class _JamModeScreenState extends State<JamModeScreen> {
                           ListenableBuilder(
                             listenable: controller,
                             builder: (context, _) =>
-                                _buildKeyboard(controller, keyboardHeight),
+                                _buildKeyboard(
+                                    controller, keyboardHeight, compact),
                           ),
                         ],
                       ),
@@ -623,7 +632,8 @@ class _JamModeScreenState extends State<JamModeScreen> {
     );
   }
 
-  Widget _buildKeyboard(JamModeController c, double height) {
+  Widget _buildKeyboard(
+      JamModeController c, double height, bool compact) {
     final active = c.running || c.countingIn;
     return SafeArea(
       top: false,
@@ -632,15 +642,25 @@ class _JamModeScreenState extends State<JamModeScreen> {
         child: SizedBox(
           height: height,
           child: RepaintBoundary(
-            child: PianoKeyboard(
+            child: InstrumentSurface(
+              instrument: _instrument,
               lowMidi: _keyboardLowMidi,
               octaves: _keyboardOctaves,
+              anchor: [
+                for (var m = _keyboardLowMidi;
+                    m < _keyboardLowMidi + _keyboardOctaves * 12;
+                    m++)
+                  if (c.isTargetHint(m)) m,
+              ],
               feedbackFor: c.feedbackFor,
               isTargetHint: (_showDots && active && c.running)
                   ? c.isTargetHint
                   : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
+              compact: compact,
+              leftHanded: _leftHanded,
+              twinMode: _twinMode,
             ),
           ),
         ),

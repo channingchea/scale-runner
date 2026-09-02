@@ -163,21 +163,25 @@ live bugs on piano.
   touched. Assets grew from 1.5 MB to 2.7 MB.
 
 ## Phase 1: Device check (**still open — needs hardware**)
-Phases 2 and 3 were built ahead of this against the numbers below, so the
-check can now be run on the real `FretboardView` in a drill rather than on a
-throwaway grid. Nothing after Phase 3 should be tuned until it is done.
+Phases 2, 3 and now 4 were built ahead of this against the numbers below, so
+the check no longer needs a throwaway grid: switch Instrument to Guitar in
+Settings and the real `FretboardView` is live in every drill. Nothing past
+Phase 4 (the per-mode reconciliation in Phase 5) should be tuned until this
+is done.
 
 Cell size cannot be judged in a simulator or in the HTML proof.
-- [ ] Throw a static vertical 6-string x 5-fret grid into a drill's keyboard
-      slot on a real phone in portrait. Expect ~55pt strings, ~44pt frets.
-      Confirm adjacent-string mis-taps are rare with one finger, and that
-      three fingers can hold a triad in the box without occluding it.
-- [ ] Same grid horizontal in landscape (about 157pt tall on a phone, so ~26pt
-      per string). Decide whether landscape phones keep the horizontal neck or
-      also use the box. Desktop and iPad are not in question.
+- [ ] On a real phone in portrait, open any drill with Guitar selected.
+      Expect ~55pt strings, ~44pt frets in the vertical box. Confirm
+      adjacent-string mis-taps are rare with one finger, and that three
+      fingers can hold a triad in the box without occluding it.
+- [ ] Same drill in landscape (about 157pt tall on a phone, so ~26pt per
+      string, the horizontal neck). Decide whether landscape phones keep the
+      horizontal neck or should also use the box — right now `compact`
+      (`isCompactLayout`, height < 500) always picks the neck.
 - [ ] Decide the hit model: each string's hit band runs to the midpoint of its
-      neighbours (no dead zones), each fret's band likewise. Write the numbers
-      into this doc.
+      neighbours (no dead zones), each fret's band likewise — this is already
+      how `FretboardView._Geometry.hitTest` works; confirm it feels right on
+      hardware and write the numbers into this doc.
 
 ## Phase 2: Theory core, `lib/theory/fretboard.dart`
 **DONE 2026-09-02, commit `801db2b`.** Pure Dart, no UI, no MIDI, fully
@@ -260,24 +264,53 @@ unit-testable. All guitar-specific ambiguity lives here.
       `onKeyDown`s; twin note ref-counting; pointer cancel releases; lefty
       flip mirrors string order but not fret order.
 
-## Phase 4: Setting + surface swap
-- [ ] `quiz_settings.dart`: `instrument()` / `setInstrument(Instrument)`
+## Phase 4: Setting + surface swap — DONE 2026-09-02
+- [x] `quiz_settings.dart`: `instrument()` / `setInstrument(Instrument)`
       (`instrument` key, default piano), `leftHanded()` / `setLeftHanded`,
       `guitarTwinMode()` / `setGuitarTwinMode`.
-- [ ] `settings_screen.dart`: an **Instrument** section with a piano/guitar
+- [x] `settings_screen.dart`: an **Instrument** section with a piano/guitar
       segmented control and, when guitar is selected, the left-handed switch
       and the twin-dots choice. Free, no Pro gate.
-- [ ] `lib/widgets/instrument_surface.dart` (~40 lines): reads the setting
-      and returns `PianoKeyboard` or `FretboardView`, forwarding the four
-      callbacks and `showLabels`. Takes an `anchor` (the notes that define
-      the box this round) so the fretboard can call `boxFor`.
-- [ ] Swap the six call sites. Each screen already owns `_buildKeyboard(c,
-      height)`; the surface keeps that height and picks orientation from
-      `isCompactLayout(bodyHeight)` (compact = horizontal neck, otherwise the
-      vertical box). Desktop always horizontal.
-- [ ] Top bar icon: `Icons.piano` when MIDI is connected stays; the touch
-      icon can stay `touch_app` for both instruments.
-- [ ] Note sound: taps play the piano tone for both instruments (decided).
+- [x] `lib/widgets/instrument_surface.dart`: reads the setting and returns
+      `PianoKeyboard` or `FretboardView`, forwarding the four callbacks and
+      `showLabels`. Takes an `anchor` (the notes that define the box this
+      round) so the fretboard can call `boxFor`.
+- [x] Swapped all six call sites (quiz, scale run, jam mode, inversion run,
+      voicing drill, voicing capture). Each screen's `_buildKeyboard` now
+      passes `compact` through from its existing `isCompactLayout(bodyHeight)`
+      call, so orientation picks itself.
+- [x] Top bar icon and note sound: confirmed as already correct, no code
+      needed — `Icons.piano`/`touch_app` and the piano tone on tap already
+      don't reference the keyboard widget directly.
+
+### What this phase found
+- **Anchor for pitch-class-based drills.** Scale Running and Jam Mode judge
+  by pitch class across the whole keyboard (`isTargetHint` has no backing
+  note list), unlike Inversion Running / Voicings / the quiz which expose an
+  exact `List<int>`. For those two, the anchor is built by scanning
+  `isTargetHint` over the keyboard's own low–high range — the same notes
+  that would light up as blue dots on the piano — so the guitar's box always
+  covers exactly what the piano would have hinted, hint-dots setting or not.
+- **Voicing Capture has no target at all** — it's free-form shape-building.
+  Its anchor is the notes already tapped (`_sorted`), so the box follows the
+  shape as it grows; with zero notes tapped, `boxFor([])` returns a box at
+  the nut (frets 0-4), a sane starting point.
+- **Voicings drill is not guitar-re-voiced yet.** Unlike Inversion Running
+  (Phase 2/3, `guitarVoicingCycle`), the Voicings drill and Voicing Capture
+  hand the fretboard the *same* close/drop shape the piano plays, just
+  placed wherever `boxFor`/`fit` land it — no octave-shifting for guitar
+  playability. That reconciliation is Phase 5, as planned; Phase 4 only
+  wires the surface.
+- **Instrument is loaded once per screen entry**, same as every other
+  per-mode display setting in this app (`_showDots` etc.) — changing it on
+  the Settings screen takes effect the next time a drill screen opens, not
+  live underneath an open one. Consistent with existing behavior; not a new
+  limitation.
+- Added `test/instrument_surface_test.dart` (piano vs. guitar dispatch, box
+  actually covers every anchor note, orientation from `compact` — including
+  a check that desktop's "always horizontal" override actually holds) and
+  `test/instrument_settings_test.dart` (the three new settings round-trip).
+  530 tests pass, `flutter analyze` clean.
 
 ## Phase 5: Per-mode reconciliation
 - [ ] **Quiz (Scales + Chords)**: anchor = `targetNotes`. Box from `boxFor`.

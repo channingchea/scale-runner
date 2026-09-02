@@ -5,6 +5,8 @@ import '../theory/scale_running.dart';
 import '../theory/jam_mode.dart';
 import '../theory/voicings.dart';
 import '../social/social_models.dart';
+import '../theory/fretboard.dart' show Instrument;
+import '../widgets/fretboard_view.dart' show TwinDotMode;
 import 'quiz_controller.dart';
 
 /// Global timing difficulty: how tight the on-beat / close windows are when
@@ -61,6 +63,9 @@ class QuizSettings {
 
   static const _metronomeBpmKey = 'metronome_bpm';
   static const _timingDifficultyKey = 'timing_difficulty';
+  static const _instrumentKey = 'instrument';
+  static const _leftHandedKey = 'left_handed';
+  static const _guitarTwinModeKey = 'guitar_twin_mode';
   static const _noteSoundKey = 'note_sound';
   static const _tickHapticKey = 'tick_haptic';
   static const _introSeenKey = 'intro_seen';
@@ -255,6 +260,39 @@ class QuizSettings {
 
   Future<void> setTimingDifficulty(TimingDifficulty difficulty) async {
     await _prefs.setString(_timingDifficultyKey, difficulty.name);
+  }
+
+  /// Global instrument surface — piano or guitar — shared by every drill.
+  /// Default piano; unknown stored values fall back to piano.
+  Future<Instrument> instrument() async =>
+      Instrument.byName(await _prefs.getString(_instrumentKey));
+
+  Future<void> setInstrument(Instrument instrument) async {
+    await _prefs.setString(_instrumentKey, instrument.name);
+  }
+
+  /// Mirrors the fretboard left to right for left-handed players. Guitar
+  /// only; no effect on the piano. Default off.
+  Future<bool> leftHanded() async =>
+      await _prefs.getBool(_leftHandedKey) ?? false;
+
+  Future<void> setLeftHanded(bool on) async {
+    await _prefs.setBool(_leftHandedKey, on);
+  }
+
+  /// How much of a note's other fretboard positions to show alongside the
+  /// one the drill means. Default primaryAndGhost; unknown stored values
+  /// fall back to it.
+  Future<TwinDotMode> guitarTwinMode() async {
+    final stored = await _prefs.getString(_guitarTwinModeKey);
+    return TwinDotMode.values.firstWhere(
+      (m) => m.name == stored,
+      orElse: () => TwinDotMode.primaryAndGhost,
+    );
+  }
+
+  Future<void> setGuitarTwinMode(TwinDotMode mode) async {
+    await _prefs.setString(_guitarTwinModeKey, mode.name);
   }
 
   // ---- Scale Running drill settings ----

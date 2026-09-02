@@ -12,11 +12,13 @@ import '../quiz/quiz_settings.dart';
 import '../runner/inversion_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/instrument_surface.dart';
 import '../widgets/inversion_run_settings_sheet.dart';
 import '../widgets/inversion_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
-import '../widgets/piano_keyboard.dart';
 import '../widgets/reminder_prompt_sheet.dart';
 import '../widgets/rotate_hint_banner.dart';
 import '../widgets/streak_sheets.dart';
@@ -43,6 +45,9 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   bool _tempoMode = false;
   bool _showDots = true;
   bool _showFormula = true;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -108,6 +113,9 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     _tempoMode = await settings.invTempoMode();
     _showDots = await settings.invShowDots();
     _showFormula = await settings.invShowFormula();
+    _instrument = await settings.instrument();
+    _leftHanded = await settings.leftHanded();
+    _twinMode = await settings.guitarTwinMode();
     final chords = await settings.invEnabledChords();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
@@ -117,6 +125,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
       tempoMode: _tempoMode,
       onBeatMs: difficulty.onBeatMs,
       closeMs: difficulty.closeMs,
+      instrument: _instrument,
     );
     final latency = await resolveInputLatencyMs(widget.midi, settings);
     next
@@ -238,7 +247,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
                           if (_settings != null)
                             RotateHintBanner(settings: _settings!),
                           Expanded(child: _buildPrompt(controller, compact)),
-                          _buildKeyboard(controller, keyboardHeight),
+                          _buildKeyboard(
+                              controller, keyboardHeight, compact),
                         ],
                       ),
                     );
@@ -529,7 +539,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     );
   }
 
-  Widget _buildKeyboard(InversionRunController c, double height) {
+  Widget _buildKeyboard(
+      InversionRunController c, double height, bool compact) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -537,16 +548,21 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
         child: SizedBox(
           height: height,
           child: RepaintBoundary(
-            child: PianoKeyboard(
+            child: InstrumentSurface(
+              instrument: _instrument,
               // Transposing: lowest key is the round's root, fixed display octave.
               lowMidi: c.lowMidi,
               octaves: _keyboardOctaves.toDouble(),
+              anchor: c.currentStep.notes,
               feedbackFor: c.feedbackFor,
               isTargetHint: (_showDots && (c.running || c.countingIn))
                   ? c.isTargetHint
                   : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
+              compact: compact,
+              leftHanded: _leftHanded,
+              twinMode: _twinMode,
             ),
           ),
         ),

@@ -8,9 +8,12 @@ import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
+import '../theory/fretboard.dart';
 import '../theory/music_theory.dart';
 import '../theory/voicings.dart';
-import '../widgets/piano_keyboard.dart';
+import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/instrument_surface.dart';
 import '../widgets/rotate_hint_banner.dart';
 
 /// Build one voicing — play the shape, say which note is its root, name it.
@@ -50,6 +53,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   StreamSubscription<MidiNoteEvent>? _midiSub;
   QuizSettings? _settings;
   bool _noteSound = true;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
 
   /// The root the user tapped. Null means "follow the bass" — the default
   /// tracks the lowest played note until they pick one themselves, so a
@@ -79,10 +85,16 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   Future<void> _bootstrap() async {
     final settings = await QuizSettings.load();
     final sound = await settings.noteSoundEnabled();
+    final instrument = await settings.instrument();
+    final leftHanded = await settings.leftHanded();
+    final twinMode = await settings.guitarTwinMode();
     if (!mounted) return;
     setState(() {
       _settings = settings;
       _noteSound = sound;
+      _instrument = instrument;
+      _leftHanded = leftHanded;
+      _twinMode = twinMode;
     });
   }
 
@@ -442,6 +454,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   }
 
   Widget _buildKeyboard(double height) {
+    final compact = isCompactLayout(MediaQuery.of(context).size.height);
     return SafeArea(
       top: false,
       child: Padding(
@@ -449,9 +462,11 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
         child: SizedBox(
           height: height,
           child: RepaintBoundary(
-            child: PianoKeyboard(
+            child: InstrumentSurface(
+              instrument: _instrument,
               lowMidi: kVoicingKeyboardLow,
               octaves: _keyboardOctaves,
+              anchor: _sorted,
               feedbackFor: (n) => _notes.contains(n)
                   ? KeyFeedback.pressed
                   : KeyFeedback.idle,
@@ -459,6 +474,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
               onKeyDown: _toggle,
               // Latching: the note stays on when the finger comes off.
               onKeyUp: (_) {},
+              compact: compact,
+              leftHanded: _leftHanded,
+              twinMode: _twinMode,
             ),
           ),
         ),

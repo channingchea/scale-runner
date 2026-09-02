@@ -6,7 +6,9 @@ import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
+import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import '../widgets/fretboard_view.dart' show TwinDotMode;
 import '../widgets/timing_difficulty_selector.dart';
 
 /// The app's real settings screen: global sound + timing controls, Restore
@@ -23,6 +25,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _noteSound = true;
   bool _tickHaptic = true;
   TimingDifficulty _difficulty = TimingDifficulty.normal;
+  Instrument _instrument = Instrument.piano;
+  bool _leftHanded = false;
+  TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   String _version = '';
   bool _restoring = false;
   bool _reminders = false;
@@ -40,6 +45,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final difficulty = await settings.timingDifficulty();
     final reminders = await settings.remindersEnabled();
     final (hour, minute) = await settings.reminderTime();
+    final instrument = await settings.instrument();
+    final leftHanded = await settings.leftHanded();
+    final twinMode = await settings.guitarTwinMode();
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
@@ -49,6 +57,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _difficulty = difficulty;
       _reminders = reminders;
       _reminderTime = TimeOfDay(hour: hour, minute: minute);
+      _instrument = instrument;
+      _leftHanded = leftHanded;
+      _twinMode = twinMode;
       _version = '${info.version} (${info.buildNumber})';
     });
   }
@@ -86,6 +97,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _toggleTickHaptic(bool on) async {
     setState(() => _tickHaptic = on);
     await _settings?.setTickHapticEnabled(on);
+  }
+
+  Future<void> _setInstrument(Instrument instrument) async {
+    setState(() => _instrument = instrument);
+    await _settings?.setInstrument(instrument);
+  }
+
+  Future<void> _toggleLeftHanded(bool on) async {
+    setState(() => _leftHanded = on);
+    await _settings?.setLeftHanded(on);
+  }
+
+  Future<void> _setTwinMode(TwinDotMode mode) async {
+    setState(() => _twinMode = mode);
+    await _settings?.setGuitarTwinMode(mode);
   }
 
   Future<void> _unlockPro() async {
@@ -128,6 +154,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
+                  _sectionHeader('Instrument'),
+                  _instrumentTile(),
+                  if (_instrument == Instrument.guitar) ...[
+                    _switchTile(
+                      value: _leftHanded,
+                      onChanged: _toggleLeftHanded,
+                      title: 'Left-handed',
+                      subtitle: 'Mirror the fretboard for a left-handed grip',
+                    ),
+                    _twinModeTile(),
+                  ],
+                  _sectionDivider(),
                   _sectionHeader('Sound'),
                   _switchTile(
                     value: _noteSound,
@@ -172,6 +210,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _versionTile(),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _instrumentTile() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: SegmentedButton<Instrument>(
+        segments: [
+          for (final i in Instrument.values)
+            ButtonSegment(value: i, label: Text(i.label)),
+        ],
+        selected: {_instrument},
+        onSelectionChanged: (sel) => _setInstrument(sel.first),
+      ),
+    );
+  }
+
+  Widget _twinModeTile() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Other positions',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          const Text(
+              'A note often lives in more than one place on the neck. How '
+              'much of that to show alongside the one the drill means.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const SizedBox(height: 8),
+          SegmentedButton<TwinDotMode>(
+            segments: [
+              for (final m in TwinDotMode.values)
+                ButtonSegment(value: m, label: Text(m.label)),
+            ],
+            selected: {_twinMode},
+            onSelectionChanged: (sel) => _setTwinMode(sel.first),
+          ),
+        ],
       ),
     );
   }

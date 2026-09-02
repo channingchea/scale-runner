@@ -28,7 +28,14 @@ enum TwinDotMode {
   primaryAndGhost,
 
   /// Every position, filled. For players who already read the whole neck.
-  all,
+  all;
+
+  /// Display name for the settings screen.
+  String get label => switch (this) {
+        TwinDotMode.primaryOnly => 'Primary only',
+        TwinDotMode.primaryAndGhost => 'Primary + ghost',
+        TwinDotMode.all => 'All positions',
+      };
 }
 
 /// An interactive fretboard that stands in for the on-screen piano.
