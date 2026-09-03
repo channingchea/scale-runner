@@ -396,6 +396,49 @@ unit-testable. All guitar-specific ambiguity lives here.
   on desktop, so an offset-based tap would be testing the layout maths.
   546 tests pass, `flutter analyze` clean.
 
+## Phase 5b: Reading aids — DONE 2026-09-03
+Came out of beta build 18. The tester's report: *"a bit confusing on how to
+read what was on screen for a second. It might help the user if there was
+something to indicate fret numbers as well as what strings they are
+(EADGBE)."* Three changes, all on by default, each individually switchable
+under Settings → Instrument (guitar only).
+
+- [x] **String letters.** A gutter outside the wood — a row across the top in
+  portrait, a column at the nut end in landscape — naming each open string.
+  Read off `Tuning.openStrings` rather than hardcoded, and placed by the same
+  `stringCentre()` the board uses, so it follows a left-handed flip for free.
+  Letters only; the octave digit was noise, not the missing information.
+- [x] **Fret numbers.** The window's first fret plus any inlay fret inside it
+  (3, 5, 7, 9, 12, …) in a gutter on the opposite edge. Two or three digits,
+  matching the markers already in the wood. Replaces the old single `Nfr`
+  badge, which was painted *on* the board, showed nothing at all at the nut,
+  and in landscape sat at `y = 8`, across the top string. The badge is still
+  drawn when the setting is off.
+- [x] **Note names on dots only.** `showLabels` defaulted true with no screen
+  overriding it, so all 30 cells carried a name — one row of labels on a
+  piano, a wall of text on a 6 × 5 grid. Now `FretboardLabels.dotsOnly`
+  narrows it to lit cells and hint dots: 30 → 18 for a scale, 30 → 4 for a
+  chord shape. This is the change that buys back what the two gutters spend.
+
+Notes worth keeping:
+- **The gutters are the reason the Listener moved.** It now wraps the board
+  and nothing else, with the board in a `Positioned` inside a `Stack`. Hoist
+  it outside the gutters and every tap returns short by the gutter size,
+  which on a phone reads as a tap-accuracy bug, not a layout one. Pinned by
+  the new `gutters` group in `test/fretboard_view_test.dart`.
+- **The three settings are one `FretboardLabels` object, not three bools.**
+  Six drill screens plus Settings each have to carry them from prefs to the
+  board; one field per screen beats three. Stored as three separate prefs
+  keys so turning one off never disturbs the others.
+- `_GutterPainter` is separate from `_FretboardPainter` because that
+  painter's canvas *is* the board — everything it draws is board-local, and
+  the gutters are by definition outside it. It also repaints on a different
+  clock: on the window or the settings, never on a glow.
+- The old tests in `fretboard_view_test.dart` aim taps at coordinates and
+  assume a 50 × 50 cell, so they now pump with `FretboardLabels.none`. With
+  the aids on they happened to still pass, which is luck, not a contract.
+- 550 tests pass, `flutter analyze` clean.
+
 ## Phase 6: Voicings instrument tag
 - [ ] `VoicingSpec.instrument` (`Instrument`, default piano when decoding
       entries without the field, so the existing library is untouched).

@@ -16,7 +16,7 @@ import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/rotate_hint_banner.dart';
@@ -46,6 +46,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -106,6 +107,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     _instrument = await settings.instrument();
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
+    _fretLabels = await settings.fretboardLabels();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
@@ -625,6 +627,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,
+              labels: _fretLabels,
             ),
           ),
         ),

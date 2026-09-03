@@ -5,9 +5,16 @@ import 'package:scale_runner/quiz/quiz_controller.dart' show KeyFeedback;
 import 'package:scale_runner/theory/fretboard.dart';
 import 'package:scale_runner/widgets/fretboard_view.dart';
 
-/// The board is pinned to 300 x 250 at the top left, so a cell is exactly
-/// 50 x 50 and a tap can be aimed at a named string and fret.
+/// The widget is pinned to 300 x 250 at the top left. Most tests here aim
+/// taps at coordinates, so they pump with [FretboardLabels.none]: with no
+/// gutters reserved the board fills all 300 x 250 and a cell is exactly
+/// 50 x 50. The gutter group at the bottom is the one that pumps with them
+/// on, and it does its own arithmetic.
 const double kCell = 50;
+
+/// Widget size, shared by both.
+const double kWidth = 300;
+const double kHeight = 250;
 
 void main() {
   late List<int> down;
@@ -24,6 +31,7 @@ void main() {
     FretboardOrientation orientation = FretboardOrientation.verticalBox,
     bool leftHanded = false,
     TwinDotMode twinMode = TwinDotMode.primaryAndGhost,
+    FretboardLabels labels = FretboardLabels.none,
     KeyFeedback Function(int)? feedbackFor,
     bool Function(int)? isTargetHint,
     Set<FretPosition>? latched,
@@ -33,13 +41,14 @@ void main() {
       home: Align(
         alignment: Alignment.topLeft,
         child: SizedBox(
-          width: 300,
-          height: 250,
+          width: kWidth,
+          height: kHeight,
           child: FretboardView(
             box: box,
             orientation: orientation,
             leftHanded: leftHanded,
             twinMode: twinMode,
+            labels: labels,
             feedbackFor: feedbackFor ?? (_) => KeyFeedback.idle,
             isTargetHint: isTargetHint ?? (_) => false,
             onKeyDown: down.add,
@@ -259,6 +268,91 @@ void main() {
       expect(find.bySemanticsLabel('G#2'), findsOneWidget); // low E fret 4
       expect(find.bySemanticsLabel('E4'), findsOneWidget); // high E open
       handle.dispose();
+    });
+  });
+
+  // The gutters reserve space *outside* the board, which means the board no
+  // longer starts at the widget's top left. If the Listener is ever hoisted
+  // outside them, every tap comes back short by the gutter size — which on a
+  // phone looks exactly like the tap-accuracy complaint this all came from,
+  // not like a layout bug. So aim taps at real board coordinates and insist
+  // the reported cell is the one under the finger.
+  group('gutters', () {
+    const all = FretboardLabels();
+
+    testWidgets('portrait: a tap still lands on the cell under it',
+        (tester) async {
+      final cells = <FretPosition>[];
+      await pump(tester, labels: all, onCellDown: cells.add);
+
+      // Letters take 18 off the top, numbers 20 off the left.
+      const originX = 20.0, originY = 18.0;
+      final cellW = (kWidth - originX) / 6;
+      final cellH = (kHeight - originY) / 5;
+      Offset at(int slot, int row) => Offset(
+            originX + (slot + 0.5) * cellW,
+            originY + (row + 0.5) * cellH,
+          );
+
+      await tester.tapAt(at(2, 3)); // D string, fret 3
+      await tester.tapAt(at(0, 0)); // low E open — the corner most at risk
+      await tester.tapAt(at(5, 4)); // high E, fret 4
+      await tester.pump();
+
+      expect(cells, const [
+        FretPosition(2, 3),
+        FretPosition(0, 0),
+        FretPosition(5, 4),
+      ]);
+    });
+
+    testWidgets('landscape: the strings are still where the letters say',
+        (tester) async {
+      final cells = <FretPosition>[];
+      await pump(
+        tester,
+        labels: all,
+        orientation: FretboardOrientation.horizontalNeck,
+        onCellDown: cells.add,
+      );
+
+      // Letters take 18 off the left, numbers 20 off the bottom. Frets are
+      // spaced by the scale-length rule here, so only the string axis is
+      // aimed at; every tap sits well inside the board along the neck.
+      const originX = 18.0;
+      final stringPitch = (kHeight - 20.0) / 6;
+      final along = originX + (kWidth - originX) / 2;
+
+      // Slot 0 is the top of the neck, and landscape hangs the low E at the
+      // bottom — so slot 0 is string 5 and the last slot is string 0.
+      await tester.tapAt(Offset(along, 0.5 * stringPitch));
+      await tester.tapAt(Offset(along, 5.5 * stringPitch));
+      await tester.pump();
+
+      expect(cells.map((c) => c.string), [5, 0]);
+    });
+
+    testWidgets('left-handed mirrors the letters with the board',
+        (tester) async {
+      final cells = <FretPosition>[];
+      await pump(tester, labels: all, leftHanded: true, onCellDown: cells.add);
+
+      final cellW = (kWidth - 20.0) / 6;
+      await tester.tapAt(Offset(20.0 + 0.5 * cellW, 18.0 + 0.5 * (kHeight - 18) / 5));
+      await tester.pump();
+
+      // Left-handed portrait puts the high E in slot 0, so the leftmost
+      // column is string 5, not string 0.
+      expect(cells.single.string, 5);
+    });
+
+    testWidgets('turning them off restores the full-bleed board',
+        (tester) async {
+      final cells = <FretPosition>[];
+      await pump(tester, labels: FretboardLabels.none, onCellDown: cells.add);
+      await tester.tapAt(const Offset(0.5 * kCell, 0.5 * kCell));
+      await tester.pump();
+      expect(cells, const [FretPosition(0, 0)]);
     });
   });
 }

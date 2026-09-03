@@ -12,7 +12,7 @@ import '../theory/fretboard.dart';
 import '../theory/music_theory.dart';
 import '../theory/voicings.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/rotate_hint_banner.dart';
 
@@ -68,6 +68,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
 
   /// The root the user tapped. Null means "follow the bass" — the default
   /// tracks the lowest played note until they pick one themselves, so a
@@ -103,6 +104,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
     final instrument = await settings.instrument();
     final leftHanded = await settings.leftHanded();
     final twinMode = await settings.guitarTwinMode();
+    final fretLabels = await settings.fretboardLabels();
     if (!mounted) return;
     setState(() {
       _settings = settings;
@@ -110,6 +112,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
       _instrument = instrument;
       _leftHanded = leftHanded;
       _twinMode = twinMode;
+      _fretLabels = fretLabels;
       // The instrument arrives after initState has loaded any existing
       // shape, so the neck is seeded here rather than there.
       _seedCells();
@@ -601,6 +604,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
                   compact: compact,
                   leftHanded: _leftHanded,
                   twinMode: _twinMode,
+                  labels: _fretLabels,
                 ),
               ),
             ),

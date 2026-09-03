@@ -14,7 +14,7 @@ import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/inversion_run_settings_sheet.dart';
 import '../widgets/inversion_session_summary_sheet.dart';
@@ -48,6 +48,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -116,6 +117,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     _instrument = await settings.instrument();
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
+    _fretLabels = await settings.fretboardLabels();
     final chords = await settings.invEnabledChords();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
@@ -577,6 +579,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,
+              labels: _fretLabels,
             ),
           ),
         ),

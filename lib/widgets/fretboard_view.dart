@@ -39,6 +39,50 @@ enum TwinDotMode {
       };
 }
 
+/// The annotations drawn around the board so a player can read it at a
+/// glance. All three default on; Settings turns them off individually.
+///
+/// They are grouped rather than passed as three flags because every drill
+/// screen has to carry them from Settings down to the board, and one field
+/// per screen is cheaper than three.
+class FretboardLabels {
+  const FretboardLabels({
+    this.strings = true,
+    this.fretNumbers = true,
+    this.dotsOnly = true,
+  });
+
+  /// A gutter naming each open string — E A D G B E in standard tuning.
+  final bool strings;
+
+  /// A gutter numbering the window's first fret and any inlay fret inside it.
+  /// Off falls back to the old single `5fr` badge painted on the wood.
+  final bool fretNumbers;
+
+  /// Narrows note names to lit cells and hint dots. Off names all 30 cells.
+  final bool dotsOnly;
+
+  static const none =
+      FretboardLabels(strings: false, fretNumbers: false, dotsOnly: false);
+
+  FretboardLabels copyWith({bool? strings, bool? fretNumbers, bool? dotsOnly}) =>
+      FretboardLabels(
+        strings: strings ?? this.strings,
+        fretNumbers: fretNumbers ?? this.fretNumbers,
+        dotsOnly: dotsOnly ?? this.dotsOnly,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is FretboardLabels &&
+      other.strings == strings &&
+      other.fretNumbers == fretNumbers &&
+      other.dotsOnly == dotsOnly;
+
+  @override
+  int get hashCode => Object.hash(strings, fretNumbers, dotsOnly);
+}
+
 /// An interactive fretboard that stands in for the on-screen piano.
 ///
 /// Same four callbacks, so validators, judging, scoring and stats never learn
@@ -70,6 +114,7 @@ class FretboardView extends StatefulWidget {
     this.leftHanded = false,
     this.twinMode = TwinDotMode.primaryAndGhost,
     this.showLabels = true,
+    this.labels = const FretboardLabels(),
     this.latched,
     this.onCellDown,
   });
@@ -91,6 +136,10 @@ class FretboardView extends StatefulWidget {
 
   final TwinDotMode twinMode;
   final bool showLabels;
+
+  /// Which of the reading aids around the board to draw. See
+  /// [FretboardLabels].
+  final FretboardLabels labels;
 
   /// Cells the parent is holding lit with no finger on them.
   ///
@@ -130,6 +179,14 @@ const Duration _glowDuration = Duration(milliseconds: 90);
 
 /// Frets that carry a position marker; 12 gets the double dot.
 const Set<int> _inlayFrets = {3, 5, 7, 9, 12, 15, 17, 19, 21};
+
+/// The strip the open-string letters live in, outside the wood. Deliberately
+/// outside: on the board they read as part of the instrument rather than as
+/// annotation, and they would sit on top of a cell that can be tapped.
+const double _stringGutter = 18;
+
+/// The strip the fret numbers live in, on the opposite edge from the letters.
+const double _fretGutter = 20;
 
 // ---- Wood palette --------------------------------------------------------
 // Decorative only — a rosewood neck, not a semantic app color, so it stays
@@ -325,8 +382,9 @@ class _FretboardViewState extends State<FretboardView>
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final insets = _gutterInsets();
         final geometry = _Geometry(
-          size: _cappedSize(constraints),
+          size: _cappedSize(constraints.deflate(insets)),
           box: widget.box,
           stringCount: widget.tuning.stringCount,
           orientation: widget.orientation,
@@ -334,53 +392,105 @@ class _FretboardViewState extends State<FretboardView>
         );
         _geometry = geometry;
 
+        // The Listener wraps the board and nothing else. Put it outside the
+        // gutters and every tap comes back offset by the gutter size, which
+        // looks exactly like a tap-accuracy bug.
+        final board = Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _onDown,
+          onPointerMove: _onMove,
+          onPointerUp: (e) => _onUp(e.pointer),
+          onPointerCancel: (e) => _onUp(e.pointer),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _FretboardPainter(
+                    glow: _glow,
+                    geometry: geometry,
+                    tuning: widget.tuning,
+                    from: _from,
+                    to: _to,
+                    solidDots: solid,
+                    ghostDots: ghost,
+                    showLabels: widget.showLabels,
+                    labels: widget.labels,
+                  ),
+                ),
+              ),
+              // One node per cell so a screen reader can walk the neck,
+              // matching the per-key semantics the piano has. These sit
+              // above the painter but absorb nothing: the Listener is
+              // outside and opaque, so it still sees every pointer.
+              for (var s = 0; s < widget.tuning.stringCount; s++)
+                for (var f = widget.box.start; f <= widget.box.end; f++)
+                  Positioned.fromRect(
+                    rect: geometry.cellRect(s, f),
+                    child: Semantics(
+                      label: noteName(widget.tuning.midiAt(s, f)),
+                      button: true,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+            ],
+          ),
+        );
+
+        if (insets == EdgeInsets.zero) {
+          return Center(
+            child: SizedBox(
+              width: geometry.size.width,
+              height: geometry.size.height,
+              child: board,
+            ),
+          );
+        }
+
         return Center(
           child: SizedBox(
-            width: geometry.size.width,
-            height: geometry.size.height,
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: _onDown,
-              onPointerMove: _onMove,
-              onPointerUp: (e) => _onUp(e.pointer),
-              onPointerCancel: (e) => _onUp(e.pointer),
-              child: Stack(
-                children: [
-                  Positioned.fill(
+            width: geometry.size.width + insets.horizontal,
+            height: geometry.size.height + insets.vertical,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
                     child: CustomPaint(
-                      painter: _FretboardPainter(
-                        glow: _glow,
+                      painter: _GutterPainter(
                         geometry: geometry,
                         tuning: widget.tuning,
-                        from: _from,
-                        to: _to,
-                        solidDots: solid,
-                        ghostDots: ghost,
-                        showLabels: widget.showLabels,
+                        insets: insets,
+                        labels: widget.labels,
                       ),
                     ),
                   ),
-                  // One node per cell so a screen reader can walk the neck,
-                  // matching the per-key semantics the piano has. These sit
-                  // above the painter but absorb nothing: the Listener is
-                  // outside and opaque, so it still sees every pointer.
-                  for (var s = 0; s < widget.tuning.stringCount; s++)
-                    for (var f = widget.box.start; f <= widget.box.end; f++)
-                      Positioned.fromRect(
-                        rect: geometry.cellRect(s, f),
-                        child: Semantics(
-                          label: noteName(widget.tuning.midiAt(s, f)),
-                          button: true,
-                          child: const SizedBox.expand(),
-                        ),
-                      ),
-                ],
-              ),
+                ),
+                Positioned(
+                  left: insets.left,
+                  top: insets.top,
+                  width: geometry.size.width,
+                  height: geometry.size.height,
+                  child: board,
+                ),
+              ],
             ),
           ),
         );
       },
     );
+  }
+
+  /// Space reserved outside the board for the reading aids.
+  ///
+  /// Portrait runs the letters across the top above the nut and the numbers
+  /// down the left; landscape puts the letters at the nut end and the numbers
+  /// under the neck. Either way they never share an edge, so the corner
+  /// between them stays empty.
+  EdgeInsets _gutterInsets() {
+    final strings = widget.labels.strings ? _stringGutter : 0.0;
+    final frets = widget.labels.fretNumbers ? _fretGutter : 0.0;
+    return widget.orientation == FretboardOrientation.verticalBox
+        ? EdgeInsets.only(top: strings, left: frets)
+        : EdgeInsets.only(left: strings, bottom: frets);
   }
 
   /// On a resizable desktop window, keep string and fret spacing in a
@@ -533,6 +643,7 @@ class _FretboardPainter extends CustomPainter {
     required this.solidDots,
     required this.ghostDots,
     required this.showLabels,
+    required this.labels,
   }) : super(repaint: glow);
 
   /// Drives the 90 ms fade between [from] and [to] without a rebuild.
@@ -545,6 +656,7 @@ class _FretboardPainter extends CustomPainter {
   final Set<FretPosition> solidDots;
   final Set<FretPosition> ghostDots;
   final bool showLabels;
+  final FretboardLabels labels;
 
   Color? _glowAt(FretPosition cell) {
     final a = from[cell];
@@ -685,14 +797,19 @@ class _FretboardPainter extends CustomPainter {
               ..strokeWidth = 1.5,
           );
         }
-        if (showLabels) {
+        // An empty cell's name is noise: 30 of them turn the board into a
+        // wall of text the dots have to fight through. Naming only what the
+        // drill is pointing at is what makes the shape read.
+        final named = isLit || solidDots.contains(cell) || ghostDots.contains(cell);
+        if (showLabels && (named || !labels.dotsOnly)) {
           _label(canvas, rect, tuning.midiAt(s, f), lit: isLit);
         }
       }
     }
 
-    // Which part of the neck this is.
-    if (box.start > 0) _fretNumber(canvas, g, size);
+    // Which part of the neck this is. The gutter says it better when it is
+    // on, and says it at the nut too, where this badge shows nothing.
+    if (!labels.fretNumbers && box.start > 0) _fretNumber(canvas, g, size);
   }
 
   void _line(Canvas canvas, _Geometry g, double along, Paint paint) {
@@ -758,5 +875,103 @@ class _FretboardPainter extends CustomPainter {
       !mapEquals(old.to, to) ||
       !setEquals(old.solidDots, solidDots) ||
       !setEquals(old.ghostDots, ghostDots) ||
-      old.showLabels != showLabels;
+      old.showLabels != showLabels ||
+      old.labels != labels;
+}
+
+/// The reading aids, drawn in the strips [_FretboardViewState._gutterInsets]
+/// reserved around the board.
+///
+/// Kept out of [_FretboardPainter] because that painter's canvas is the board
+/// itself: everything it draws is in board-local coordinates, and the gutters
+/// are by definition outside them. It also repaints on a different clock —
+/// these change only when the window or the settings do, never on a glow.
+class _GutterPainter extends CustomPainter {
+  _GutterPainter({
+    required this.geometry,
+    required this.tuning,
+    required this.insets,
+    required this.labels,
+  });
+
+  final _Geometry geometry;
+  final Tuning tuning;
+  final EdgeInsets insets;
+  final FretboardLabels labels;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final g = geometry;
+
+    if (labels.strings) {
+      for (var s = 0; s < tuning.stringCount; s++) {
+        // The open string's letter, no octave digit — the tester asked for
+        // "EADGBE", and E2 vs E4 is not what they were missing. Read off the
+        // tuning rather than hardcoded, and placed by the same stringCentre
+        // the board uses, so it follows a left-handed flip for free.
+        final name = pitchClassNames[pitchClassOf(tuning.openStrings[s])];
+        final centre = g.stringCentre(s);
+        _text(
+          canvas,
+          name,
+          g.isVertical
+              ? Offset(insets.left + centre, insets.top / 2)
+              : Offset(insets.left / 2, insets.top + centre),
+          weight: FontWeight.w700,
+          size: 11,
+        );
+      }
+    }
+
+    if (labels.fretNumbers) {
+      // The window's first fret, plus whichever inlays fall inside it. Those
+      // are the markers already in the wood, and they are what a player
+      // navigates a real neck by, so two or three digits do the job that
+      // numbering all five frets would only clutter.
+      for (var f = g.box.start; f <= g.box.end; f++) {
+        if (f != g.box.start && !_inlayFrets.contains(f)) continue;
+        final centre = g.fretCentre(f);
+        _text(
+          canvas,
+          '$f',
+          g.isVertical
+              ? Offset(insets.left / 2, insets.top + centre)
+              : Offset(insets.left + centre,
+                  insets.top + g.size.height + insets.bottom / 2),
+          weight: f == g.box.start ? FontWeight.w700 : FontWeight.w400,
+          size: 10,
+        );
+      }
+    }
+  }
+
+  void _text(
+    Canvas canvas,
+    String text,
+    Offset centre, {
+    required FontWeight weight,
+    required double size,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          fontSize: size,
+          fontWeight: weight,
+          color: AppColors.textSecondary,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, centre - Offset(tp.width / 2, tp.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(_GutterPainter old) =>
+      old.geometry.size != geometry.size ||
+      old.geometry.box != geometry.box ||
+      old.geometry.leftHanded != geometry.leftHanded ||
+      old.geometry.orientation != geometry.orientation ||
+      old.insets != insets ||
+      old.labels != labels;
 }

@@ -13,7 +13,7 @@ import '../theme/app_theme.dart';
 import '../theory/fretboard.dart';
 import '../theory/voicings.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/reminder_prompt_sheet.dart';
@@ -63,6 +63,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
 
   /// The two settings that define the cycle. Kept so a settings change can
@@ -118,6 +119,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
     _instrument = await settings.instrument();
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
+    _fretLabels = await settings.fretboardLabels();
     if (!mounted) {
       metronome.dispose();
       return;
@@ -567,6 +569,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,
+              labels: _fretLabels,
             ),
           ),
         ),

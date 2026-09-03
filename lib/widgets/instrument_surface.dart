@@ -39,6 +39,7 @@ class InstrumentSurface extends StatelessWidget {
     this.leftHanded = false,
     this.twinMode = TwinDotMode.primaryAndGhost,
     this.showLabels = true,
+    this.labels = const FretboardLabels(),
     this.latched,
     this.onCellDown,
   });
@@ -61,6 +62,10 @@ class InstrumentSurface extends StatelessWidget {
   final bool leftHanded;
   final TwinDotMode twinMode;
   final bool showLabels;
+
+  /// Guitar reading aids — string letters, fret numbers, dot-only note names.
+  /// Meaningless on the piano, which has neither strings nor frets.
+  final FretboardLabels labels;
 
   /// Guitar capture: the cells the parent is holding lit, and where taps go.
   /// Both meaningless on the piano, where a note is one key and latching is
@@ -93,6 +98,7 @@ class InstrumentSurface extends StatelessWidget {
       leftHanded: leftHanded,
       twinMode: twinMode,
       showLabels: showLabels,
+      labels: labels,
       latched: latched,
       onCellDown: onCellDown,
     );

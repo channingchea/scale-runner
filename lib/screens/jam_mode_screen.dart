@@ -15,7 +15,7 @@ import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/jam_mode_settings_sheet.dart';
 import '../widgets/jam_session_summary_sheet.dart';
@@ -48,6 +48,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
 
   /// Live MIDI setup changes, so the latency correction can be
@@ -114,6 +115,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
     _instrument = await settings.instrument();
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
+    _fretLabels = await settings.fretboardLabels();
     final keyPc = await settings.jamKeyPc();
     final families = await settings.jamFamilies();
     final sessionBars = await settings.jamSessionBars();
@@ -674,6 +676,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,
+              labels: _fretLabels,
             ),
           ),
         ),

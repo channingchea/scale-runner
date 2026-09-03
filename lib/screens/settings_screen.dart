@@ -8,7 +8,7 @@ import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/timing_difficulty_selector.dart';
 
 /// The app's real settings screen: global sound + timing controls, Restore
@@ -28,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
+  FretboardLabels _fretLabels = const FretboardLabels();
   String _version = '';
   bool _restoring = false;
   bool _reminders = false;
@@ -48,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final instrument = await settings.instrument();
     final leftHanded = await settings.leftHanded();
     final twinMode = await settings.guitarTwinMode();
+    final fretLabels = await settings.fretboardLabels();
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
@@ -60,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _instrument = instrument;
       _leftHanded = leftHanded;
       _twinMode = twinMode;
+      _fretLabels = fretLabels;
       _version = '${info.version} (${info.buildNumber})';
     });
   }
@@ -114,6 +117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _settings?.setGuitarTwinMode(mode);
   }
 
+  Future<void> _setFretLabels(FretboardLabels labels) async {
+    setState(() => _fretLabels = labels);
+    await _settings?.setFretboardLabels(labels);
+  }
+
   Future<void> _unlockPro() async {
     final unlocked = await PaywallSheet.show(context);
     if (unlocked && mounted) setState(() {});
@@ -164,6 +172,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: 'Mirror the fretboard for a left-handed grip',
                     ),
                     _twinModeTile(),
+                    _switchTile(
+                      value: _fretLabels.strings,
+                      onChanged: (on) =>
+                          _setFretLabels(_fretLabels.copyWith(strings: on)),
+                      title: 'String names',
+                      subtitle: 'Label each string above the board — '
+                          'E A D G B E',
+                    ),
+                    _switchTile(
+                      value: _fretLabels.fretNumbers,
+                      onChanged: (on) =>
+                          _setFretLabels(_fretLabels.copyWith(fretNumbers: on)),
+                      title: 'Fret numbers',
+                      subtitle: 'Number the first fret shown and the position '
+                          'markers beside it',
+                    ),
+                    _switchTile(
+                      value: _fretLabels.dotsOnly,
+                      onChanged: (on) =>
+                          _setFretLabels(_fretLabels.copyWith(dotsOnly: on)),
+                      title: 'Note names on dots only',
+                      subtitle: 'Off names all 30 cells, which can crowd the '
+                          'shape you are meant to see',
+                    ),
                   ],
                   _sectionDivider(),
                   _sectionHeader('Sound'),

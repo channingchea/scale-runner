@@ -6,7 +6,7 @@ import '../theory/jam_mode.dart';
 import '../theory/voicings.dart';
 import '../social/social_models.dart';
 import '../theory/fretboard.dart' show Instrument;
-import '../widgets/fretboard_view.dart' show TwinDotMode;
+import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import 'quiz_controller.dart';
 
 /// Global timing difficulty: how tight the on-beat / close windows are when
@@ -66,6 +66,9 @@ class QuizSettings {
   static const _instrumentKey = 'instrument';
   static const _leftHandedKey = 'left_handed';
   static const _guitarTwinModeKey = 'guitar_twin_mode';
+  static const _guitarStringLabelsKey = 'guitar_string_labels';
+  static const _guitarFretNumbersKey = 'guitar_fret_numbers';
+  static const _guitarDotLabelsOnlyKey = 'guitar_dot_labels_only';
   static const _noteSoundKey = 'note_sound';
   static const _tickHapticKey = 'tick_haptic';
   static const _introSeenKey = 'intro_seen';
@@ -293,6 +296,21 @@ class QuizSettings {
 
   Future<void> setGuitarTwinMode(TwinDotMode mode) async {
     await _prefs.setString(_guitarTwinModeKey, mode.name);
+  }
+
+  /// Which reading aids the fretboard draws around the board. All three
+  /// default on — they are what makes the board legible at a glance — and
+  /// are stored as three keys so turning one off never disturbs the others.
+  Future<FretboardLabels> fretboardLabels() async => FretboardLabels(
+        strings: await _prefs.getBool(_guitarStringLabelsKey) ?? true,
+        fretNumbers: await _prefs.getBool(_guitarFretNumbersKey) ?? true,
+        dotsOnly: await _prefs.getBool(_guitarDotLabelsOnlyKey) ?? true,
+      );
+
+  Future<void> setFretboardLabels(FretboardLabels labels) async {
+    await _prefs.setBool(_guitarStringLabelsKey, labels.strings);
+    await _prefs.setBool(_guitarFretNumbersKey, labels.fretNumbers);
+    await _prefs.setBool(_guitarDotLabelsOnlyKey, labels.dotsOnly);
   }
 
   // ---- Scale Running drill settings ----
