@@ -77,8 +77,14 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
 
   static const double _keyboardOctaves = 3;
 
-  /// Room for the fret-window control that sits above a guitar board.
+  /// Room for the fret-window control above a portrait guitar board.
   static const double _boxSliderHeight = 36;
+
+  /// Room for the same control standing beside a landscape neck. A neck lying
+  /// flat is already short — spending 36 of its ~164 points on a row above it
+  /// left barely 12 points per string — so there it goes down the left edge,
+  /// outside the board, alongside the string letters.
+  static const double _boxStepperWidth = 46;
 
   bool get _isEditing => widget.existing != null;
 
@@ -535,81 +541,109 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
 
   /// Slide the window along the neck. The only control of its kind in the
   /// app — every drill knows which frets it wants, capture does not.
-  Widget _buildBoxSlider() {
-    const height = _boxSliderHeight;
+  ///
+  /// [vertical] stacks it into a narrow column for the landscape neck, where
+  /// there is no height to spare above the board. Up the neck is the top
+  /// button either way: stacked, that is the spinner convention, and the
+  /// board's own fret numbers already say which end is the nut.
+  Widget _buildBoxStepper({required bool vertical}) {
+    final up = IconButton(
+      onPressed: _box.end >= kMaxFret ? null : () => _slideBox(1),
+      icon: const Icon(Icons.add, size: 18),
+      color: AppColors.textSecondary,
+      tooltip: 'Up the neck',
+      visualDensity: VisualDensity.compact,
+    );
+    final down = IconButton(
+      onPressed: _box.start == 0 ? null : () => _slideBox(-1),
+      icon: const Icon(Icons.remove, size: 18),
+      color: AppColors.textSecondary,
+      tooltip: 'Toward the nut',
+      visualDensity: VisualDensity.compact,
+    );
+    // "Frets 0-4" does not fit a 46-point column, and beside a board that now
+    // numbers its own frets the word is redundant anyway.
+    final readout = Text(
+      vertical ? '${_box.start}-${_box.end}' : 'Frets ${_box.start}-${_box.end}',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: AppColors.textSecondary,
+        fontSize: vertical ? 11 : 12,
+        fontFeatures: tabularFigures,
+      ),
+    );
+
+    if (vertical) {
+      return SizedBox(
+        width: _boxStepperWidth,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [up, readout, down],
+        ),
+      );
+    }
     return SizedBox(
-      height: height,
+      height: _boxSliderHeight,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            onPressed: _box.start == 0 ? null : () => _slideBox(-1),
-            icon: const Icon(Icons.remove, size: 18),
-            color: AppColors.textSecondary,
-            tooltip: 'Toward the nut',
-            visualDensity: VisualDensity.compact,
-          ),
-          SizedBox(
-            width: 74,
-            child: Text(
-              'Frets ${_box.start}-${_box.end}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontFeatures: tabularFigures,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: _box.end >= kMaxFret ? null : () => _slideBox(1),
-            icon: const Icon(Icons.add, size: 18),
-            color: AppColors.textSecondary,
-            tooltip: 'Up the neck',
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+        children: [down, SizedBox(width: 74, child: readout), up],
       ),
     );
   }
 
   Widget _buildKeyboard(double height) {
     final compact = isCompactLayout(MediaQuery.of(context).size.height);
+    // The stepper follows the board. A neck lying flat has no height to give
+    // away, so there the control stands beside it and the board keeps the
+    // whole allowance; a portrait box has height to spare and keeps the row
+    // above, where a wider readout reads better.
+    final neck = _onGuitar && (compact || isDesktopPlatform);
+    final surface = RepaintBoundary(
+      child: InstrumentSurface(
+        instrument: _instrument,
+        lowMidi: kVoicingKeyboardLow,
+        octaves: _keyboardOctaves,
+        anchor: _sorted,
+        box: _onGuitar ? _box : null,
+        latched: _onGuitar ? _cells : null,
+        onCellDown: _onGuitar ? _tapCell : null,
+        feedbackFor: (n) =>
+            _notes.contains(n) ? KeyFeedback.pressed : KeyFeedback.idle,
+        isTargetHint: (_) => false,
+        onKeyDown: _toggle,
+        // Latching: the note stays on when the finger comes off.
+        onKeyUp: (_) {},
+        compact: compact,
+        leftHanded: _leftHanded,
+        twinMode: _twinMode,
+        labels: _fretLabels,
+      ),
+    );
+
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_onGuitar) _buildBoxSlider(),
-            SizedBox(
-              height: _onGuitar ? height - _boxSliderHeight : height,
-              child: RepaintBoundary(
-                child: InstrumentSurface(
-                  instrument: _instrument,
-                  lowMidi: kVoicingKeyboardLow,
-                  octaves: _keyboardOctaves,
-                  anchor: _sorted,
-                  box: _onGuitar ? _box : null,
-                  latched: _onGuitar ? _cells : null,
-                  onCellDown: _onGuitar ? _tapCell : null,
-                  feedbackFor: (n) => _notes.contains(n)
-                      ? KeyFeedback.pressed
-                      : KeyFeedback.idle,
-                  isTargetHint: (_) => false,
-                  onKeyDown: _toggle,
-                  // Latching: the note stays on when the finger comes off.
-                  onKeyUp: (_) {},
-                  compact: compact,
-                  leftHanded: _leftHanded,
-                  twinMode: _twinMode,
-                  labels: _fretLabels,
+        child: neck
+            ? SizedBox(
+                height: height,
+                child: Row(
+                  children: [
+                    _buildBoxStepper(vertical: true),
+                    Expanded(child: surface),
+                  ],
                 ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_onGuitar) _buildBoxStepper(vertical: false),
+                  SizedBox(
+                    height: _onGuitar ? height - _boxSliderHeight : height,
+                    child: surface,
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

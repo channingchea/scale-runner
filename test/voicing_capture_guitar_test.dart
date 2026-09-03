@@ -7,6 +7,7 @@ import 'package:scale_runner/midi/midi_service.dart';
 import 'package:scale_runner/quiz/quiz_settings.dart';
 import 'package:scale_runner/screens/voicing_capture_screen.dart';
 import 'package:scale_runner/theory/fretboard.dart';
+import 'package:scale_runner/widgets/fretboard_view.dart' show FretboardView;
 
 /// Capture is the one screen where the guitar is not merely a different
 /// picture of the same model: the shape is cells, not pitches, because a note
@@ -47,7 +48,11 @@ void main() {
   testWidgets('the window opens at the nut and slides a fret at a time',
       (tester) async {
     await pump(tester);
-    expect(find.text('Frets 0-4'), findsOneWidget);
+    // Tests run on macOS, where isDesktopPlatform forces the horizontal neck,
+    // so this is the vertical stepper down the left edge. Its readout drops
+    // the word "Frets" because it has 46 points to fit in — see
+    // _buildBoxStepper. The portrait row still reads "Frets 0-4".
+    expect(find.text('0-4'), findsOneWidget);
 
     // Already at the nut, so there is nowhere lower to go.
     final toNut = tester.widget<IconButton>(find
@@ -60,7 +65,26 @@ void main() {
 
     await tester.tap(find.byTooltip('Up the neck'));
     await tester.pumpAndSettle();
-    expect(find.text('Frets 1-5'), findsOneWidget);
+    expect(find.text('1-5'), findsOneWidget);
+  });
+
+  testWidgets('the stepper stands beside the neck, not above it',
+      (tester) async {
+    await pump(tester);
+    // The whole point of the landscape layout: the control must not eat into
+    // the board's height. Its left edge sits at or before the board's, and
+    // the two do not overlap vertically-stacked.
+    final stepper = tester.getRect(find
+        .ancestor(
+          of: find.byTooltip('Up the neck'),
+          matching: find.byType(IconButton),
+        )
+        .first);
+    final board = tester.getRect(find.byType(FretboardView));
+    expect(stepper.right, lessThanOrEqualTo(board.left + 1),
+        reason: 'stepper should be to the left of the board');
+    expect(stepper.center.dy, greaterThan(board.top),
+        reason: 'stepper should sit alongside the board, not above it');
   });
 
   testWidgets('a tap latches the note on the string it was tapped on',
