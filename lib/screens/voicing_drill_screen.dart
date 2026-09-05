@@ -335,7 +335,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
               size: 20,
             ),
             IconButton(
-              icon: const Icon(Icons.tune),
+              icon: const Icon(Icons.settings),
               color: AppColors.textPrimary,
               tooltip: 'Drill settings',
               onPressed: _settings == null ? null : _openSettings,
