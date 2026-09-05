@@ -22,6 +22,12 @@ const double kContentMaxWidth = 900.0;
 /// 15-key octave range is stretched across a 1440px window.
 const double kWhiteKeyAspect = 5.5;
 
+/// The same ratio, relaxed for landscape on a phone or tablet. There the
+/// keyboard's height allowance is a fraction of an already short viewport, and
+/// because the width follows the height, the strict ratio drew keys ~26pt wide
+/// -- well under a fingertip. A squatter key is the lesser evil.
+const double kWhiteKeyAspectLandscape = 3.2;
+
 /// Practice screens fall back to a tighter layout when there isn't room for
 /// the full one. Deliberately a function of height alone: a short macOS window
 /// needs this exactly as much as a landscape phone does, and the old
@@ -35,10 +41,40 @@ double maxKeyboardWidth({
   required double available,
   required double height,
   required int whiteKeyCount,
+  double aspect = kWhiteKeyAspect,
 }) {
   if (whiteKeyCount <= 0 || height <= 0) return available;
-  final ideal = whiteKeyCount * (height / kWhiteKeyAspect);
+  final ideal = whiteKeyCount * (height / aspect);
   return ideal < available ? ideal : available;
+}
+
+/// The width to draw the on-screen piano at, for the slot it sits in and the
+/// viewport it sits on. Landscape only: portrait sizing is untouched.
+///
+/// - Portrait, and any desktop window: [kWhiteKeyAspect], as before.
+/// - Landscape tablet: [kWhiteKeyAspectLandscape] -- still capped, so keys
+///   don't become slabs on a 12.9" iPad, but wide enough to hit.
+/// - Landscape phone (compact, the tightest height allowance there is): no cap
+///   at all. This is what the keyboard did before the cap existed, and it is
+///   the only way to get a tappable key out of ~150pt of height.
+///
+/// [desktop] is injectable so the rule is testable off a real device.
+double pianoWidthFor({
+  required double available,
+  required double height,
+  required int whiteKeyCount,
+  required Size viewport,
+  bool? desktop,
+}) {
+  final onDesktop = desktop ?? isDesktopPlatform;
+  final landscapeTouch = !onDesktop && viewport.width > viewport.height;
+  if (landscapeTouch && isCompactLayout(viewport.height)) return available;
+  return maxKeyboardWidth(
+    available: available,
+    height: height,
+    whiteKeyCount: whiteKeyCount,
+    aspect: landscapeTouch ? kWhiteKeyAspectLandscape : kWhiteKeyAspect,
+  );
 }
 
 /// Centres [child] and caps its width at [kContentMaxWidth]. A no-op on a

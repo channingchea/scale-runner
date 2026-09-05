@@ -139,10 +139,11 @@ class PianoKeyboard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.hasBoundedHeight
-            ? maxKeyboardWidth(
+            ? pianoWidthFor(
                 available: constraints.maxWidth,
                 height: constraints.maxHeight - _feltHeight,
                 whiteKeyCount: whiteNotes.length,
+                viewport: MediaQuery.sizeOf(context),
               )
             : constraints.maxWidth;
         return Center(
