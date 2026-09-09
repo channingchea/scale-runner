@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../runner/meter.dart';
 import '../theory/music_theory.dart';
 import '../theory/scale_running.dart';
 import '../theory/jam_mode.dart';
@@ -62,6 +63,7 @@ class QuizSettings {
       mode == QuizMode.scale ? 'beat_indicator_scales' : 'beat_indicator_chords';
 
   static const _metronomeBpmKey = 'metronome_bpm';
+  static const _metronomeMeterKey = 'metronome_meter';
   static const _timingDifficultyKey = 'timing_difficulty';
   static const _instrumentKey = 'instrument';
   static const _leftHandedKey = 'left_handed';
@@ -261,6 +263,15 @@ class QuizSettings {
 
   Future<void> setMetronomeBpm(int bpm) async {
     await _prefs.setInt(_metronomeBpmKey, bpm);
+  }
+
+  /// The metronome's time signature, shared across modes like the tempo.
+  /// Default: no accent, today's plain click.
+  Future<Meter> meter() async =>
+      Meter.fromName(await _prefs.getString(_metronomeMeterKey));
+
+  Future<void> setMeter(Meter meter) async {
+    await _prefs.setString(_metronomeMeterKey, meter.name);
   }
 
   /// Global timing difficulty, shared by every beat-judged mode. Default

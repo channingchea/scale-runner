@@ -72,6 +72,13 @@ class _JamModeScreenState extends State<JamModeScreen> {
     final metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
+      meter: await settings.meter(),
+      // Locked during a session, so this only resizes the bar of one that
+      // has not started.
+      onMeterChanged: (m) {
+        settings.setMeter(m);
+        _controller?.beatsPerBar = m.beatsPerBar;
+      },
     );
     // Jam Mode is always tempo-driven: collapsing the metronome bar stops the
     // clock, which must stop the drill (and surface the session summary).
@@ -125,6 +132,7 @@ class _JamModeScreenState extends State<JamModeScreen> {
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
     final next = JamModeController(
+      beatsPerBar: metronome.meter.beatsPerBar,
       keyPc: keyPc,
       families: families,
       sessionBars: sessionBars,
@@ -149,6 +157,8 @@ class _JamModeScreenState extends State<JamModeScreen> {
       ..closeMs = difficulty.closeMs
       ..hapticEnabled = hapticEnabled
       ..onBeat = next.onBeat;
+    // Every strike is beat 1 of a bar of the meter.
+    next.onBarStart = metronome.markDownbeat;
     next.bindMidi(widget.midi);
     if (!mounted) {
       next.dispose();
@@ -305,7 +315,17 @@ class _JamModeScreenState extends State<JamModeScreen> {
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             const Spacer(),
-            if (_metronome != null) MetronomeBar(controller: _metronome!),
+            if (_metronome case final m?)
+              if (_controller case final c?)
+                ListenableBuilder(
+                  listenable: c,
+                  builder: (context, _) => MetronomeBar(
+                    controller: m,
+                    meterLocked: c.phase != JamPhase.idle,
+                  ),
+                )
+              else
+                MetronomeBar(controller: m),
             const Spacer(),
             Icon(
               widget.midi.isConnected ? Icons.piano : Icons.touch_app,

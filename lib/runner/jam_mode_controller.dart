@@ -111,8 +111,15 @@ class JamModeController extends ChangeNotifier {
   /// Enabled chord families. Never empty (the UI enforces ≥1).
   final Set<JamFamily> families;
 
-  /// Count-in length in beats; also the bar length.
-  final int beatsPerBar;
+  /// Count-in length in beats; also the bar length. One bar of the
+  /// metronome's meter, set from the screen when the meter changes while idle
+  /// (the picker is locked during a session).
+  int beatsPerBar;
+
+  /// Fired on every tick that is beat 1 of a bar: the first count-in beat
+  /// and every strike downbeat (which doubles as beat 1 of the next chord's
+  /// bar). The screen wires it to MetronomeController.markDownbeat.
+  void Function()? onBarStart;
 
   /// Number of chords (hit-bars) in a session. The drill auto-ends and tallies
   /// once this many chords have been judged. Typically 12, 24, or 48.
@@ -439,16 +446,19 @@ class JamModeController extends ChangeNotifier {
           // [beatsPerBar] count-in beats tick before the strike beat — the
           // downbeat AFTER the count of "beatsPerBar", exactly like Scale
           // Running's count-in (count 1-2-3-4, play on the next downbeat).
+          if (_countInRemaining == beatsPerBar) onBarStart?.call();
           _countInRemaining--;
           notifyListeners();
           return;
         }
-        // This tick is the downbeat. A locked-in early strike from the last
-        // count-in window ([_pendingOffBy]) scores even if the chord was
-        // released before the tick (staccato comping); otherwise a chord held
-        // through the tick judges immediately, and anything else opens a
-        // grace window so a slightly-late press still scores *this* chord
-        // rather than spilling onto the next one.
+        // This tick is the downbeat, and beat 1 of the next chord's bar.
+        onBarStart?.call();
+        // A locked-in early strike from the last count-in window
+        // ([_pendingOffBy]) scores even if the chord was released before the
+        // tick (staccato comping); otherwise a chord held through the tick
+        // judges immediately, and anything else opens a grace window so a
+        // slightly-late press still scores *this* chord rather than spilling
+        // onto the next one.
         debug.add('DOWNBEAT since=${msSinceBeat()} period=${beatPeriodMs()} '
             'lat=$inputLatencyMs pending=$_pendingOffBy '
             'complete=$_isChordComplete '

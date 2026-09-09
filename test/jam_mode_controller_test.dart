@@ -651,4 +651,46 @@ void main() {
       expect(c.freestyleForbiddenLabel, 'not I (C)'); // unchanged
     });
   });
+
+  group('meter: one chord per bar of the meter', () {
+    for (final beats in [3, 5, 6]) {
+      test('judges one chord every $beats beats and marks each bar start', () {
+        final c = JamModeController(
+          keyPc: 0,
+          seed: 1,
+          sessionBars: 1000,
+          beatsPerBar: beats,
+        )
+          ..beatPeriodMs = (() => 600)
+          ..msSinceBeat = (() => 0);
+        final starts = <int>[];
+        var n = 0;
+        c.onBarStart = () => starts.add(n);
+        c.start();
+        // Count-in: `beats` ticks, then the strike downbeat.
+        for (var i = 0; i < beats; i++) {
+          n++;
+          c.onBeat();
+        }
+        expect(c.barsJudged, 0);
+        n++;
+        c.onBeat(); // downbeat: judges chord 1 (missed, nothing held)
+        if (c.judging) c.debugResolveGrace();
+        expect(c.barsJudged, 1);
+        // The strike tick is beat 1 of the next bar: beats - 1 more count
+        // beats, then the next strike.
+        for (var i = 0; i < beats - 1; i++) {
+          n++;
+          c.onBeat();
+        }
+        expect(c.barsJudged, 1);
+        n++;
+        c.onBeat();
+        if (c.judging) c.debugResolveGrace();
+        expect(c.barsJudged, 2);
+        expect(starts, [1, beats + 1, 2 * beats + 1]);
+        c.dispose();
+      });
+    }
+  });
 }

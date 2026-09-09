@@ -94,6 +94,8 @@ class _QuizScreenState extends State<QuizScreen> {
         MetronomeController(
             bpm: await settings.metronomeBpm(),
             onBpmChanged: settings.setMetronomeBpm,
+            meter: await settings.meter(),
+            onMeterChanged: settings.setMeter,
           )
           ..onBeatMs = difficulty.onBeatMs
           ..closeMs = difficulty.closeMs

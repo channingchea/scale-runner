@@ -679,4 +679,52 @@ void main() {
       expect(c.notesWrong, 1);
     });
   });
+
+  group('meter: count-in length and onBarStart', () {
+    /// Which ticks (1-based) fired onBarStart over [ticks] beats after start.
+    List<int> barStarts(ScaleRunController c, int ticks) {
+      final out = <int>[];
+      var n = 0;
+      c.onBarStart = () => out.add(n);
+      c.start();
+      for (var i = 0; i < ticks; i++) {
+        n++;
+        c.onBeat();
+      }
+      return out;
+    }
+
+    for (final beats in [3, 4, 5, 6]) {
+      test('a $beats-beat count-in fires on tick 1, the downbeat, and each '
+          'new scale', () {
+        final c = ScaleRunController(
+          chordsEnabled: false,
+          startKeyPc: 0,
+          beatsPerBar: beats,
+        )
+          ..beatPeriodMs = (() => 600)
+          ..msSinceBeat = (() => 0);
+        // Count-in ticks 1..beats, downbeat at beats+1, then 8-beat bars:
+        // the next scale starts 8 ticks after the downbeat, and so on.
+        final starts = barStarts(c, beats + 1 + 16);
+        expect(starts, [1, beats + 1, beats + 9, beats + 17]);
+        expect(c.beatsUntilDownbeat, 0);
+        c.dispose();
+      });
+    }
+
+    test('beatsPerBar can be resized while idle', () {
+      final c = makeController();
+      c.beatsPerBar = 3;
+      c.start();
+      expect(c.beatsUntilDownbeat, 4); // 3 count beats + the downbeat
+      c.onBeat();
+      c.onBeat();
+      c.onBeat();
+      expect(c.phase, RunPhase.countingIn);
+      c.onBeat();
+      expect(c.phase, RunPhase.running);
+      c.dispose();
+    });
+  });
 }

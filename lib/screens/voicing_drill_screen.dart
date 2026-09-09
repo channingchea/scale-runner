@@ -118,6 +118,8 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
     final metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
+      meter: await settings.meter(),
+      onMeterChanged: settings.setMeter,
     )..hapticEnabled = await settings.tickHapticEnabled();
     _noteSound = await settings.noteSoundEnabled();
     _showDots = await settings.voicingShowDots();

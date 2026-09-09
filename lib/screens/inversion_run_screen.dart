@@ -77,6 +77,13 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     final metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
+      meter: await settings.meter(),
+      // Locked while a tempo session runs, so this only resizes the opening
+      // count-in of one that has not started.
+      onMeterChanged: (m) {
+        settings.setMeter(m);
+        _controller?.beatsPerBar = m.beatsPerBar;
+      },
     );
     // Collapsing the metronome bar stops the clock; the tempo drill can't run
     // without it, so stop the controller too.
@@ -131,6 +138,7 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
     final next = InversionRunController(
+      beatsPerBar: metronome.meter.beatsPerBar,
       chords: chords,
       tempoMode: _tempoMode,
       onBeatMs: difficulty.onBeatMs,
@@ -153,6 +161,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
       ..closeMs = difficulty.closeMs
       ..hapticEnabled = hapticEnabled
       ..onBeat = next.onBeat;
+    // The root-position strike of every cycle is the accented click.
+    next.onBarStart = metronome.markDownbeat;
     next.bindMidi(widget.midi);
     if (!mounted) {
       next.dispose();
@@ -292,7 +302,16 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
             ),
             const Spacer(),
             if (_tempoMode && _metronome != null)
-              MetronomeBar(controller: _metronome!),
+              if (_controller case final c?)
+                ListenableBuilder(
+                  listenable: c,
+                  builder: (context, _) => MetronomeBar(
+                    controller: _metronome!,
+                    meterLocked: c.phase != InversionPhase.idle,
+                  ),
+                )
+              else
+                MetronomeBar(controller: _metronome!),
             const Spacer(),
             Icon(
               widget.midi.isConnected ? Icons.piano : Icons.touch_app,

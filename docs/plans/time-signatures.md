@@ -36,16 +36,16 @@ Running keeps its 8-note bars and restarts the accent cycle on each new scale.
   switch live).
 
 ## Phase 1: Meter model, accent sound, metronome engine
-- [ ] `lib/runner/meter.dart`: `enum Meter { none, threeFour, fourFour,
+- [x] `lib/runner/meter.dart`: `enum Meter { none, threeFour, fourFour,
       fiveEight, sixEight }` with `beatsPerBar` (4 for none, so drills keep
       today's count-in), `label` ("No accent", "3/4", ...), `accents` (true
       when not none).
-- [ ] `tool/gen_click_samples.py` (sibling of `gen_note_samples.py`):
+- [x] `tool/gen_click_samples.py` (sibling of `gen_note_samples.py`):
       regenerate `click.wav` byte-identical as a check, and write
       `click_accent.wav` as the same click a fifth higher with a slightly
       longer decay. Commit the asset; `assets/audio/` is already in
       `pubspec.yaml`.
-- [ ] `MetronomeController`: `meter` field (setter re-aligns to beat 0 when
+- [x] `MetronomeController`: `meter` field (setter re-aligns to beat 0 when
       idle, applies from the next bar when running), `beatInBar` getter
       (0-based), `barBeats`, and `markNextTickDownbeat()` for the Scale
       Running realignment. Second preloaded `AudioPlayer` for the accent
@@ -54,62 +54,62 @@ Running keeps its 8-note bars and restarts the accent cycle on each new scale.
       the drill's state is current), then play the accent or normal click
       and `HapticFeedback.mediumImpact` vs `lightImpact`. `start()` resets
       `beatInBar` to 0 so the first tick is always the downbeat.
-- [ ] `test/metronome_controller_test.dart`: beatInBar cycles at the meter's
+- [x] `test/metronome_controller_test.dart`: beatInBar cycles at the meter's
       length; `none` never accents; `markNextTickDownbeat` resets the cycle
       on the following tick and not earlier; meter change while running takes
       effect at the next bar; drift test still passes with the accent path.
-- [ ] `quiz_settings.dart`: `meter()` / `setMeter(Meter)` on key
+- [x] `quiz_settings.dart`: `meter()` / `setMeter(Meter)` on key
       `metronome_meter`, default `Meter.none`.
 
 ## Phase 2: Metronome bar UI
-- [ ] `metronome_bar.dart` expanded controls gain a meter chip after the "+"
+- [x] `metronome_bar.dart` expanded controls gain a meter chip after the "+"
       button: a `PopupMenuButton<Meter>` showing the current label ("4/4",
       or a struck-through metronome glyph for No accent) with the five
       options and the eighth-note tempo note as a subtitle on 5/8 and 6/8.
       Selecting persists via `QuizSettings.setMeter` (controller callback
       `onMeterChanged`, mirroring `onBpmChanged`).
-- [ ] Beat dots: a row of `barBeats` 6 px dots under the BPM number (inside
+- [x] Beat dots: a row of `barBeats` 6 px dots under the BPM number (inside
       the pill, so the Row width does not grow), current beat lit in the
       accent color, dot 1 drawn larger. Hidden when the meter is No accent.
       On compact/landscape phones the pill is already tight; if the dots do
       not fit, drop them there first.
-- [ ] `MetronomeBar` takes an optional `meterLocked` flag; drill screens pass
+- [x] `MetronomeBar` takes an optional `meterLocked` flag; drill screens pass
       true while their controller is counting in or running.
-- [ ] Every screen that builds a `MetronomeController` (Quiz, Scale Run,
+- [x] Every screen that builds a `MetronomeController` (Quiz, Scale Run,
       Inversion Run, Jam, Voicings drill, Free Play) sets `meter` from the
       pref at bootstrap. The latency-calibration screen keeps `Meter.none`
       so its measurement stays a plain click.
 
 ## Phase 3: Drill integration
-- [ ] `scale_run_screen.dart`: pass `beatsPerBar: meter.beatsPerBar` to
+- [x] `scale_run_screen.dart`: pass `beatsPerBar: meter.beatsPerBar` to
       `ScaleRunController`; wire a new `onBarStart` controller callback (fired
       in `_advance` when `_beatIndex` wraps, and at the count-in's downbeat)
       to `metronome.markNextTickDownbeat()` so the next click is accented.
       Since the count-in is one bar, the first drill downbeat is already
       aligned; the callback matters from bar 2 on.
-- [ ] `jam_mode_screen.dart`: `beatsPerBar: meter.beatsPerBar` so one chord
+- [x] `jam_mode_screen.dart`: `beatsPerBar: meter.beatsPerBar` so one chord
       spans one bar of the meter; the count-in dots widget at line ~558
       already loops over `c.beatsPerBar`. Session length stays `sessionBars`
       chords regardless of bar length.
-- [ ] `inversion_run_screen.dart`: `beatsPerBar: meter.beatsPerBar` for the
+- [x] `inversion_run_screen.dart`: `beatsPerBar: meter.beatsPerBar` for the
       opening count-in. The 2-beat inter-chord count-in stays; the drill
       calls `markNextTickDownbeat` on each cycle's step 0 so the root-position
       strike is the accented click even though a cycle's length does not fit
       the meter.
-- [ ] Voicings drill and Chords/Scales quiz: accent only, no bar logic (their
+- [x] Voicings drill and Chords/Scales quiz: accent only, no bar logic (their
       metronome is a plain click).
-- [ ] Controller tests: `ScaleRunController` fires `onBarStart` at the right
+- [x] Controller tests: `ScaleRunController` fires `onBarStart` at the right
       ticks for 3-, 5- and 6-beat count-ins; `JamModeController` judges one
       chord per 3/5/6 beats; `InversionRunController` opening count-in
       honors `beatsPerBar`.
 
 ## Phase 4: Verify
-- [ ] `flutter analyze` + `flutter test` via Desktop Commander.
+- [x] `flutter analyze` + `flutter test` via Desktop Commander (all green).
 - [ ] On-device with a BLE keyboard: accent audible and the haptic
       distinguishable in every mode; Jam in 3/4 and 6/8 for a full session;
       Scale Running in 3/4 confirms the accent lands on degree 1 every bar;
       re-run the drift test scenario by ear (10 min at 120 in 6/8).
-- [ ] Log the milestone to project memory.
+- [x] Log the milestone to project memory.
 
 ## Open questions / risks
 - Two `AudioPlayer`s firing on the same tick is fine (the note player already
@@ -121,3 +121,35 @@ Running keeps its 8-note bars and restarts the accent cycle on each new scale.
   separate plan; this one keeps the 8-note bar.
 - Secondary accents for 6/8 and 5/8 were deliberately left out; adding them
   later is a per-meter accent mask in `Meter` plus a third, quieter sample.
+
+## Built 2026-09-09 — what differs from the plan above
+- `markDownbeat()` instead of `markNextTickDownbeat()`: it marks the tick
+  being delivered. `_tickNow` now advances `beatInBar`, calls `onBeat`, and
+  only then picks the click, so a drill calling `markDownbeat()` from its
+  `onBeat` handler decides the sound of the very click it is reacting to.
+  Simpler for the drills: "this tick is beat 1" rather than predicting the
+  next one.
+- `onBarStart` also fires on the first count-in tick (all three drills), so
+  the count "1" is accented and the bar restarts however the metronome was
+  running before Start. Then the downbeat, then every bar rollover (Scale
+  Running) / strike (Jam) / cycle step 0 (Inversion Running).
+- `beatsPerBar` is a plain mutable field on the three drill controllers; the
+  screens set it from `onMeterChanged` instead of rebuilding the controller
+  (which would have stopped a running click). The chip is locked while a
+  drill is counting in or running, via a `ListenableBuilder` on the drill
+  controller around `MetronomeBar` (the top bar sits outside the screen's
+  `AnimatedBuilder`).
+- A meter picked while ticking takes over at the next bar, as planned; the
+  chip shows the new meter at once.
+- The No-accent chip is `Icons.music_off`; the beat dots are hidden on
+  compact (landscape-phone) layouts, and the BPM number now sits in a small
+  column so the dots do not widen the pill.
+- `MetronomeController` notifies listeners on every tick so the dots move;
+  the drill screens' "metronome stopped" listeners already check `running`.
+- `click.wav` recipe recovered and pinned by `tool/gen_click_samples.py
+  --verify` (1800 Hz, decay 120 /s, 0.8 FS, 50 ms, truncated). The accent is
+  2700 Hz, decay 100 /s, 60 ms, same amplitude.
+- Still to do on hardware: accent audible and the haptic distinguishable in
+  every mode; Jam in 3/4 and 6/8 for a full session; Scale Running in 3/4
+  confirms the accent lands on degree 1 every bar; drift by ear (10 min at
+  120 in 6/8).

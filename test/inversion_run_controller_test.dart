@@ -651,4 +651,50 @@ void main() {
     });
   });
 
+  group('meter: opening count-in honors beatsPerBar and marks downbeats', () {
+    for (final beats in [3, 6]) {
+      test('$beats-beat opening count-in', () {
+        final c = InversionRunController(
+          tempoMode: true,
+          seed: 1,
+          beatsPerBar: beats,
+        )
+          ..beatPeriodMs = (() => 600)
+          ..msSinceBeat = (() => 0);
+        final starts = <int>[];
+        var n = 0;
+        c.onBarStart = () => starts.add(n);
+        c.start();
+        expect(c.beatsUntilDownbeat, beats);
+        for (var i = 0; i < beats; i++) {
+          n++;
+          c.onBeat();
+          expect(c.countingIn, isTrue);
+        }
+        n++;
+        c.onBeat(); // the downbeat: step 0 begins
+        expect(c.running, isTrue);
+        expect(starts, [1, beats + 1]);
+
+        // Run the whole cycle out (every step missed) into the inter-chord
+        // count-in and the next cycle's step 0: only that downbeat marks.
+        final steps = c.stepCount;
+        for (var i = 0; i < steps; i++) {
+          n++;
+          c.onBeat();
+        }
+        expect(c.countingIn, isTrue);
+        for (var i = 0; i < c.interChordCountInBeats; i++) {
+          n++;
+          c.onBeat();
+        }
+        n++;
+        c.onBeat();
+        expect(c.running, isTrue);
+        expect(c.stepIndex, 0);
+        expect(starts, [1, beats + 1, beats + 1 + steps + c.interChordCountInBeats + 1]);
+        c.dispose();
+      });
+    }
+  });
 }

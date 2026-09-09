@@ -85,8 +85,20 @@ class InversionRunController extends ChangeNotifier
   /// first step. When false, the drill is self-paced (press-driven).
   final bool tempoMode;
 
-  /// Count-in length in beats (tempo mode).
-  final int beatsPerBar;
+  /// Count-in length in beats (tempo mode): one bar of the metronome's
+  /// meter, set from the screen when the meter changes while idle.
+  int beatsPerBar;
+
+  /// Fired on the ticks that are beat 1 of something (tempo mode): the first
+  /// beat of the opening count-in, and every downbeat that starts a cycle's
+  /// step 0. The screen wires it to MetronomeController.markDownbeat so the
+  /// root-position strike is the accented click even though a cycle's length
+  /// does not fit the meter.
+  void Function()? onBarStart;
+
+  /// Whether the count-in in progress is the opening one (a full bar) rather
+  /// than the short inter-chord one.
+  bool _openingCountIn = false;
 
   /// Inter-chord count-in length in beats (tempo mode only), played at each
   /// cycle boundary so the next chord is visible before its first judged
@@ -281,6 +293,7 @@ class InversionRunController extends ChangeNotifier
       _phase = InversionPhase.countingIn;
       _countInTotal = beatsPerBar;
       _countInRemaining = beatsPerBar;
+      _openingCountIn = true;
     } else {
       _phase = InversionPhase.running;
     }
@@ -333,10 +346,15 @@ class InversionRunController extends ChangeNotifier
         return;
       case InversionPhase.countingIn:
         if (_countInRemaining > 0) {
+          if (_openingCountIn && _countInRemaining == _countInTotal) {
+            onBarStart?.call();
+          }
           _countInRemaining--;
         } else {
           // This tick is the downbeat: step 0 begins now.
           _phase = InversionPhase.running;
+          _openingCountIn = false;
+          onBarStart?.call();
         }
         notifyListeners();
       case InversionPhase.running:
@@ -530,6 +548,7 @@ class InversionRunController extends ChangeNotifier
         _phase = InversionPhase.countingIn;
         _countInTotal = interChordCountInBeats;
         _countInRemaining = interChordCountInBeats;
+        _openingCountIn = false;
       }
     }
   }

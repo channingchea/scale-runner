@@ -6,7 +6,9 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../runner/meter.dart';
 import '../theme/app_theme.dart';
+import '../ui/responsive.dart';
 
 /// How close a key press landed to the nearest metronome beat.
 enum BeatAccuracy { onBeat, close, off }
@@ -21,14 +23,23 @@ enum BeatAccuracy { onBeat, close, off }
 /// judgment compares against the *ideal* beat time, not the jittery moment the
 /// timer happened to fire.
 class MetronomeController extends ChangeNotifier {
-  MetronomeController({this._bpm = 100, this.onBpmChanged, bool silent = false})
-      : _player = silent ? null : _makePlayer();
+  MetronomeController({
+    this._bpm = 100,
+    this.onBpmChanged,
+    this.onMeterChanged,
+    this._meter = Meter.none,
+    bool silent = false,
+  })  : _player = silent ? null : _makePlayer('audio/click.wav'),
+        _accentPlayer = silent ? null : _makePlayer('audio/click_accent.wav');
 
   static const minBpm = 40;
   static const maxBpm = 240;
 
   /// Reports tempo changes (e.g. to persist them).
   final ValueChanged<int>? onBpmChanged;
+
+  /// Reports meter changes (e.g. to persist them and resize a count-in).
+  final ValueChanged<Meter>? onMeterChanged;
 
   /// Estimated input latency (ms) from key-strike to event, subtracted from
   /// each hit before judging so the flash matches when the key was really
@@ -54,19 +65,62 @@ class MetronomeController extends ChangeNotifier {
   Timer? _flashTimer;
   BeatAccuracy? _flash;
 
+  // ---- Meter -------------------------------------------------------------
+  Meter _meter;
+
+  /// A meter picked while ticking waits for the bar to end.
+  Meter? _pendingMeter;
+
+  /// 0-based beat within the bar; 0 is the accented downbeat.
+  int _beatInBar = 0;
+
+  /// The meter in force, or the one about to take over at the next bar.
+  Meter get meter => _pendingMeter ?? _meter;
+
+  /// Idle: takes effect at once, from beat 0. Ticking: from the next bar, so
+  /// the current one is not cut short.
+  set meter(Meter m) {
+    if (m == meter) return;
+    if (_running) {
+      _pendingMeter = m;
+    } else {
+      _meter = m;
+      _beatInBar = 0;
+    }
+    onMeterChanged?.call(m);
+    notifyListeners();
+  }
+
+  int get beatInBar => _beatInBar;
+  int get barBeats => _meter.beatsPerBar;
+
+  /// Whether the most recent tick (or the coming first tick) is accented.
+  bool get accentNow => _meter.accents && _beatInBar == 0;
+
+  /// The tick being delivered right now is beat 1 of a bar. For a drill to
+  /// call from its onBeat handler — the accent is chosen after onBeat runs,
+  /// so this lands on the very click the drill is reacting to. Scale Running
+  /// uses it to restart the cycle on each new scale; the count-ins use it
+  /// to line the drill's downbeat up with the accent whatever the metronome
+  /// was doing before Start.
+  void markDownbeat() => _beatInBar = 0;
+
   // Absolute-time scheduling state: everything is measured in ms since _epoch.
   DateTime? _epoch;
   int _lastIdealTickMs = 0; // ideal time of the most recent tick
   int _nextIdealTickMs = 0; // ideal time the armed timer is aiming for
 
-  // Low-latency player preloaded with the click so each tick only seeks+plays.
-  // Null when constructed silent (tests), which also skips haptics.
+  // Low-latency players preloaded with the clicks so each tick only seeks and
+  // plays. Both preloaded up front: on Android low-latency mode a sample set
+  // at tick time would make the first downbeat late. Null when constructed
+  // silent (tests), which also skips haptics.
   final AudioPlayer? _player;
+  final AudioPlayer? _accentPlayer;
 
-  static AudioPlayer _makePlayer() => AudioPlayer()
+  static AudioPlayer _makePlayer(String asset) => AudioPlayer()
     ..setPlayerMode(PlayerMode.lowLatency)
     ..setReleaseMode(ReleaseMode.stop)
-    ..setSource(AssetSource('audio/click.wav'));
+    ..setSource(AssetSource(asset));
 
   int get bpm => _bpm;
   bool get running => _running;
@@ -99,7 +153,8 @@ class MetronomeController extends ChangeNotifier {
     _epoch = clock.now();
     _lastIdealTickMs = 0;
     _nextIdealTickMs = _periodMs;
-    _tickNow(); // the downbeat, at ideal time 0
+    _applyPendingMeter();
+    _tickNow(first: true); // the downbeat, at ideal time 0
     _scheduleNext();
     notifyListeners();
   }
@@ -107,10 +162,19 @@ class MetronomeController extends ChangeNotifier {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _applyPendingMeter();
     if (_running) {
       _running = false;
       notifyListeners();
     }
+  }
+
+  void _applyPendingMeter() {
+    final m = _pendingMeter;
+    if (m == null) return;
+    _pendingMeter = null;
+    _meter = m;
+    _beatInBar = 0;
   }
 
   void nudge(int delta) {
@@ -163,12 +227,27 @@ class MetronomeController extends ChangeNotifier {
     _scheduleNext();
   }
 
-  void _tickNow() {
-    _player
+  /// One click. The bar position advances first and the drill hears the
+  /// beat next, so a [markDownbeat] from inside its handler still decides
+  /// this tick's sound; only then does the click play.
+  void _tickNow({bool first = false}) {
+    if (first) {
+      _beatInBar = 0;
+    } else if (_beatInBar + 1 >= barBeats) {
+      _applyPendingMeter();
+      _beatInBar = 0;
+    } else {
+      _beatInBar++;
+    }
+    onBeat?.call();
+    final accent = accentNow;
+    (accent ? _accentPlayer : _player)
       ?..seek(Duration.zero)
       ..resume();
-    if (_player != null && hapticEnabled) HapticFeedback.lightImpact();
-    onBeat?.call();
+    if (_player != null && hapticEnabled) {
+      accent ? HapticFeedback.mediumImpact() : HapticFeedback.lightImpact();
+    }
+    notifyListeners();
   }
 
   @override
@@ -176,16 +255,27 @@ class MetronomeController extends ChangeNotifier {
     _timer?.cancel();
     _flashTimer?.cancel();
     _player?.dispose();
+    _accentPlayer?.dispose();
     super.dispose();
   }
 }
 
 /// Compact metronome for the quiz top bar: a single icon that expands into
-/// play/stop + tempo controls when tapped. Stops ticking when collapsed.
+/// play/stop + tempo + meter controls when tapped. Stops ticking when
+/// collapsed.
 class MetronomeBar extends StatefulWidget {
-  const MetronomeBar({super.key, required this.controller});
+  const MetronomeBar({
+    super.key,
+    required this.controller,
+    this.meterLocked = false,
+  });
 
   final MetronomeController controller;
+
+  /// Disables the meter chip. Drill screens lock it while counting in or
+  /// running, since a bar that changes length mid-session would desync the
+  /// count; the quizzes and Free Play can switch live.
+  final bool meterLocked;
 
   @override
   State<MetronomeBar> createState() => _MetronomeBarState();
@@ -233,6 +323,8 @@ class _MetronomeBarState extends State<MetronomeBar> {
       };
 
   Widget _controls(MetronomeController m) {
+    // Landscape phones have no height to spare in the pill for the dots.
+    final compact = isCompactLayout(MediaQuery.of(context).size.height);
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -251,18 +343,102 @@ class _MetronomeBarState extends State<MetronomeBar> {
             color: m.running ? AppColors.accent : AppColors.textPrimary,
           ),
           _btn(Icons.remove, 'Slower', () => m.nudge(-5)),
-          // Flashes green/amber/red with the timing of each key press.
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 100),
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _bpmColor(m.flash),
-            ),
-            child: Text('${m.bpm}'),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Flashes green/amber/red with the timing of each key press.
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 100),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: _bpmColor(m.flash),
+                  height: 1.1,
+                ),
+                child: Text('${m.bpm}'),
+              ),
+              if (m.meter.accents && !compact) _beatDots(m),
+            ],
           ),
           _btn(Icons.add, 'Faster', () => m.nudge(5)),
+          _meterChip(m),
         ],
+      ),
+    );
+  }
+
+  /// Where the bar is: one dot per beat, the current one lit, beat 1 bigger.
+  Widget _beatDots(MetronomeController m) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < m.barBeats; i++)
+            Container(
+              width: i == 0 ? 6 : 4,
+              height: i == 0 ? 6 : 4,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: i == m.beatInBar
+                    ? AppColors.accent
+                    : AppColors.textMuted,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The time-signature picker. Reads "4/4" (or a crossed-out note for No
+  /// accent); dimmed and inert while [MetronomeBar.meterLocked].
+  Widget _meterChip(MetronomeController m) {
+    final locked = widget.meterLocked;
+    final color = locked ? AppColors.textMuted : AppColors.textSecondary;
+    return PopupMenuButton<Meter>(
+      enabled: !locked,
+      tooltip: locked ? 'Meter (locked while running)' : 'Meter',
+      initialValue: m.meter,
+      onSelected: (meter) => m.meter = meter,
+      padding: EdgeInsets.zero,
+      itemBuilder: (context) => [
+        for (final meter in Meter.values)
+          PopupMenuItem(
+            value: meter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(meter.label),
+                if (meter.clicksEighths)
+                  const Text(
+                    'Each click is an eighth note',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
+        child: m.meter.accents
+            ? Text(
+                m.meter.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                  fontFeatures: tabularFigures,
+                ),
+              )
+            : Icon(Icons.music_off, size: 16, color: color),
       ),
     );
   }

@@ -67,6 +67,8 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
     final metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
+      meter: await settings.meter(),
+      onMeterChanged: settings.setMeter,
     )..hapticEnabled = await settings.tickHapticEnabled();
     // Latching is for building a chord you can then read; on the guitar
     // there is nothing to read yet, so its taps stay live.

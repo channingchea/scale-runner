@@ -108,7 +108,18 @@ class ScaleRunController extends ChangeNotifier {
   final ChordProgression progression;
   final KeyIncrement increment;
   final bool sevenths;
-  final int beatsPerBar;
+
+  /// Count-in length in beats: one bar of the metronome's meter. Set from the
+  /// screen when the meter changes while idle (the picker is locked while the
+  /// drill is counting in or running).
+  int beatsPerBar;
+
+  /// Fired on every tick that is beat 1 of something: the first count-in
+  /// beat, the downbeat that starts the drill, and each bar's first beat as
+  /// the scale rolls over. The screen wires it to
+  /// MetronomeController.markDownbeat so the accented click always lands on
+  /// degree 1, even though an 8-note bar does not fit 3/4, 5/8 or 6/8.
+  void Function()? onBarStart;
 
   /// How many full passes to play in each key before advancing. Floored to
   /// 1 in the constructor.
@@ -373,15 +384,18 @@ class ScaleRunController extends ChangeNotifier {
         return;
       case RunPhase.countingIn:
         if (_countInRemaining > 0) {
+          if (_countInRemaining == beatsPerBar) onBarStart?.call();
           _countInRemaining--;
         } else {
           // This tick is the downbeat: beat 0 of the first bar.
           _phase = RunPhase.running;
           _applyPending();
+          onBarStart?.call();
         }
       case RunPhase.running:
         _settleBeat(_beatIndex);
         _advance();
+        if (_beatIndex == 0) onBarStart?.call();
     }
     notifyListeners();
   }

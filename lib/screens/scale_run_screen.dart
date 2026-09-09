@@ -65,6 +65,13 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     final metronome = MetronomeController(
       bpm: await settings.metronomeBpm(),
       onBpmChanged: settings.setMetronomeBpm,
+      meter: await settings.meter(),
+      // The picker is locked while the drill runs, so this only ever resizes
+      // the count-in of a session that has not started.
+      onMeterChanged: (m) {
+        settings.setMeter(m);
+        _controller?.beatsPerBar = m.beatsPerBar;
+      },
     );
     // Stopping the metronome (e.g. collapsing its bar) pauses the drill too —
     // the drill cannot run without its clock.
@@ -112,6 +119,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     final hapticEnabled = await settings.tickHapticEnabled();
     final old = _controller;
     final next = ScaleRunController(
+      beatsPerBar: metronome.meter.beatsPerBar,
       chordsEnabled: await settings.runChordsEnabled(),
       progression: await settings.runProgression(),
       increment: await settings.runKeyIncrement(),
@@ -134,6 +142,8 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
         if (_noteSound) _notes.play(note);
         if (next.running) metronome.registerHit();
       }
+      // Beat 1 of every scale is the accented click, whatever the meter.
+      ..onBarStart = metronome.markDownbeat
       ..onSessionEnd = () => _endSession(next);
     metronome
       ..inputLatencyMs = latency
@@ -301,7 +311,17 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             const Spacer(),
-            if (_metronome != null) MetronomeBar(controller: _metronome!),
+            if (_metronome case final m?)
+              if (_controller case final c?)
+                ListenableBuilder(
+                  listenable: c,
+                  builder: (context, _) => MetronomeBar(
+                    controller: m,
+                    meterLocked: c.phase != RunPhase.idle,
+                  ),
+                )
+              else
+                MetronomeBar(controller: m),
             const Spacer(),
             Icon(
               widget.midi.isConnected ? Icons.piano : Icons.touch_app,
