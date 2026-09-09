@@ -1,4 +1,5 @@
 import 'package:clock/clock.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scale_runner/quiz/quiz_controller.dart' show KeyFeedback;
 import 'package:scale_runner/runner/voicing_run_controller.dart';
@@ -294,6 +295,92 @@ void main() {
         expect(c.lowMidi, 48);
         playCurrent(c);
       }
+    });
+  });
+
+  group('Arpeggiated Notes latch', () {
+    void latchCurrent(VoicingRunController c) {
+      for (final n in List<int>.from(c.currentStep.notes)) {
+        c.pressKey(n, latch: true);
+        c.releaseKey(n);
+      }
+    }
+
+    test('a latched shape advances and the latch clears for the next key', () {
+      fakeAsync((async) {
+        final c = make()..start();
+        final first = List<int>.from(c.currentStep.notes);
+        latchCurrent(c);
+        expect(c.stepIndex, 1);
+        expect(c.keysCompleted, 1);
+        expect(c.latchedNotes, isEmpty);
+        for (final n in first) {
+          expect(c.feedbackFor(n), isNot(KeyFeedback.pressed));
+        }
+        latchCurrent(c);
+        expect(c.stepIndex, 2);
+        c.dispose();
+      });
+    });
+
+    test('an out-of-key note flashes and then clears the latch', () {
+      fakeAsync((async) {
+        final c = make()..start();
+        final n = c.currentStep.notes.first;
+        c.pressKey(n, latch: true);
+        // Key of C, a Cmaj7 shape: C# (61) is not a chord tone.
+        expect(c.currentStep.pitchClasses.contains(1), isFalse);
+        c.pressKey(61, latch: true);
+        expect(c.feedbackFor(61), KeyFeedback.wrong);
+        async.elapse(const Duration(milliseconds: 400));
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(n), KeyFeedback.idle);
+        expect(c.stepIndex, 0);
+        c.dispose();
+      });
+    });
+
+    test('a full-sized wrong shape flashes red and starts over', () {
+      fakeAsync((async) {
+        final c = make()..start();
+        // Right tones, wrong spacing: the target shape's notes all moved
+        // into one close octave.
+        final target = c.currentStep.notes;
+        final close = [for (final n in target) target.first + (n - target.first) % 12]
+          ..sort();
+        final distinct = close.toSet().toList();
+        expect(distinct.length, target.length, reason: 'fixture assumption');
+        for (final n in distinct) {
+          c.pressKey(n, latch: true);
+        }
+        expect(c.stepIndex, 0);
+        for (final n in distinct) {
+          expect(c.feedbackFor(n), KeyFeedback.wrong);
+        }
+        async.elapse(const Duration(milliseconds: 400));
+        expect(c.latchedNotes, isEmpty);
+        for (final n in distinct) {
+          expect(c.feedbackFor(n), KeyFeedback.idle);
+        }
+        c.dispose();
+      });
+    });
+
+    test('idle expiry clears the latch; MIDI never latches', () {
+      fakeAsync((async) {
+        final c = make()..start();
+        final n = c.currentStep.notes.first;
+        c.pressKey(n, latch: true);
+        c.releaseKey(n);
+        expect(c.feedbackFor(n), isNot(KeyFeedback.idle));
+        async.elapse(const Duration(seconds: 2));
+        expect(c.feedbackFor(n), KeyFeedback.idle);
+
+        c.pressKey(n);
+        c.releaseKey(n);
+        expect(c.latchedNotes, isEmpty);
+        c.dispose();
+      });
     });
   });
 }

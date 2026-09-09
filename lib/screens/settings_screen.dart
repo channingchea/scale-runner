@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   QuizSettings? _settings;
   bool _noteSound = true;
   bool _tickHaptic = true;
+  bool _arpeggiated = true;
   TimingDifficulty _difficulty = TimingDifficulty.normal;
   Instrument _instrument = Instrument.piano;
   bool _leftHanded = false;
@@ -43,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = await QuizSettings.load();
     final noteSound = await settings.noteSoundEnabled();
     final tickHaptic = await settings.tickHapticEnabled();
+    final arpeggiated = await settings.arpeggiatedNotes();
     final difficulty = await settings.timingDifficulty();
     final reminders = await settings.remindersEnabled();
     final (hour, minute) = await settings.reminderTime();
@@ -56,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _settings = settings;
       _noteSound = noteSound;
       _tickHaptic = tickHaptic;
+      _arpeggiated = arpeggiated;
       _difficulty = difficulty;
       _reminders = reminders;
       _reminderTime = TimeOfDay(hour: hour, minute: minute);
@@ -100,6 +103,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _toggleTickHaptic(bool on) async {
     setState(() => _tickHaptic = on);
     await _settings?.setTickHapticEnabled(on);
+  }
+
+  Future<void> _toggleArpeggiated(bool on) async {
+    setState(() => _arpeggiated = on);
+    await _settings?.setArpeggiatedNotes(on);
   }
 
   Future<void> _setInstrument(Instrument instrument) async {
@@ -164,6 +172,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   _sectionHeader('Instrument'),
                   _instrumentTile(),
+                  _switchTile(
+                    value: _arpeggiated,
+                    onChanged: _toggleArpeggiated,
+                    title: 'Arpeggiated Notes',
+                    subtitle: 'Build chords one note at a time on the '
+                        'on-screen keys. Notes stay lit until the chord '
+                        'completes, a wrong note is played, or 2 seconds '
+                        'pass. MIDI instruments still hold every note.',
+                  ),
                   if (_instrument == Instrument.guitar) ...[
                     _switchTile(
                       value: _leftHanded,

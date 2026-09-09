@@ -1,3 +1,4 @@
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scale_runner/runner/inversion_run_controller.dart';
 import 'package:scale_runner/quiz/quiz_controller.dart' show KeyFeedback;
@@ -545,4 +546,109 @@ void main() {
       expect(c.chordSnapshot, isEmpty);
     });
   });
+
+  group('Arpeggiated Notes latch', () {
+    /// Tap-and-release every note of the current voicing with the latch on.
+    void latchCurrentVoicing(InversionRunController c) {
+      for (final n in List<int>.from(c.currentStep.notes)) {
+        c.pressKey(n, latch: true);
+        c.releaseKey(n);
+      }
+    }
+
+    test('self-paced: a latched voicing advances and the latch clears', () {
+      fakeAsync((async) {
+        final c = makeController()..start();
+        final first = List<int>.from(c.currentStep.notes);
+        latchCurrentVoicing(c);
+        expect(c.stepIndex, 1);
+        expect(c.stepsCompleted, 1);
+        // Each inversion starts from nothing: nothing carries over.
+        expect(c.latchedNotes, isEmpty);
+        for (final n in first) {
+          expect(c.feedbackFor(n), isNot(KeyFeedback.pressed));
+        }
+        latchCurrentVoicing(c);
+        expect(c.stepIndex, 2);
+        c.dispose();
+      });
+    });
+
+    test('bass detection works with latched notes', () {
+      fakeAsync((async) {
+        final c = makeController()..start();
+        // Root position first: play the root-position notes but with the
+        // 3rd an octave down, so the bass is wrong and it must not advance.
+        final notes = List<int>.from(c.currentStep.notes);
+        c.pressKey(notes[1] - 12, latch: true);
+        for (final n in notes.skip(1)) {
+          c.pressKey(n, latch: true);
+        }
+        c.pressKey(notes[0], latch: true);
+        expect(c.stepIndex, 0);
+        // Put the low 3rd out and the voicing is right.
+        c.pressKey(notes[1] - 12, latch: true);
+        expect(c.stepIndex, 1);
+        c.dispose();
+      });
+    });
+
+    test('a wrong note flashes and then clears the latched notes', () {
+      fakeAsync((async) {
+        final c = makeController()..start();
+        final notes = List<int>.from(c.currentStep.notes);
+        c.pressKey(notes[0], latch: true);
+        final wrong = notes[0] + 1;
+        c.pressKey(wrong, latch: true);
+        expect(c.feedbackFor(wrong), KeyFeedback.wrong);
+        expect(c.notesWrong, 1);
+        expect(c.latchedNotes, {notes[0], wrong});
+        async.elapse(const Duration(milliseconds: 400));
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(notes[0]), KeyFeedback.idle);
+        c.dispose();
+      });
+    });
+
+    test('idle expiry clears the latched notes', () {
+      fakeAsync((async) {
+        final c = makeController()..start();
+        final n = c.currentStep.notes.first;
+        c.pressKey(n, latch: true);
+        c.releaseKey(n);
+        expect(c.feedbackFor(n), isNot(KeyFeedback.idle));
+        async.elapse(const Duration(seconds: 2));
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(n), KeyFeedback.idle);
+        c.dispose();
+      });
+    });
+
+    test('MIDI notes never latch', () {
+      fakeAsync((async) {
+        final c = makeController()..start();
+        final n = c.currentStep.notes.first;
+        c.pressKey(n);
+        c.releaseKey(n);
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(n), isNot(KeyFeedback.pressed));
+        c.dispose();
+      });
+    });
+
+    test('tempo mode: a latched voicing is held through the tick', () {
+      fakeAsync((async) {
+        final c = makeTempoController();
+        countIn(c);
+        latchCurrentVoicing(c);
+        expect(c.currentVoicingHeld, isTrue);
+        c.onBeat(); // settle step 0
+        expect(c.resultAt(0), StepResult.onBeat);
+        expect(c.stepIndex, 1);
+        expect(c.latchedNotes, isEmpty);
+        c.dispose();
+      });
+    });
+  });
+
 }

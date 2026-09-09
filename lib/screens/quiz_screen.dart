@@ -10,6 +10,7 @@ import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
 import '../quiz/quiz_settings.dart';
+import '../runner/note_latch.dart';
 import '../streak/streak_service.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
@@ -47,6 +48,12 @@ class _QuizScreenState extends State<QuizScreen> {
   FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
 
+  /// Arpeggiated Notes: on-screen taps latch so a chord builds one note at a
+  /// time. On guitar the shape is kept as cells (one per string) and handed
+  /// to the controller as notes.
+  bool _arpeggiated = true;
+  final GuitarLatch _guitarLatch = GuitarLatch();
+
   /// Live MIDI setup changes, so the beat indicator's latency correction can
   /// be re-resolved when a keyboard connects after this screen opened.
   StreamSubscription<String>? _setupSub;
@@ -76,6 +83,7 @@ class _QuizScreenState extends State<QuizScreen> {
     final leftHanded = await settings.leftHanded();
     final twinMode = await settings.guitarTwinMode();
     final fretLabels = await settings.fretboardLabels();
+    final arpeggiated = await settings.arpeggiatedNotes();
     // Restore the persisted session stats before building the controller.
     _carryScore = await settings.quizScore(widget.mode);
     _carryBestStreak = await settings.quizBestStreak(widget.mode);
@@ -116,6 +124,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _leftHanded = leftHanded;
         _twinMode = twinMode;
         _fretLabels = fretLabels;
+        _arpeggiated = arpeggiated;
       });
     }
   }
@@ -520,6 +529,10 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   Widget _buildKeyboard(QuizController c, double height, bool compact) {
+    // The latch only means something in the chord quiz; a scale is one note
+    // at a time whatever the setting says.
+    final latch = _arpeggiated && widget.mode == QuizMode.chord;
+    final guitarLatch = latch && _instrument == Instrument.guitar;
     return SafeArea(
       top: false,
       child: Padding(
@@ -534,8 +547,12 @@ class _QuizScreenState extends State<QuizScreen> {
               anchor: c.targetNotes,
               feedbackFor: c.feedbackFor,
               isTargetHint: _dotsHint ? c.isTargetHint : (_) => false,
-              onKeyDown: c.pressKey,
+              onKeyDown: (n) => c.pressKey(n, latch: latch),
               onKeyUp: c.releaseKey,
+              latched: guitarLatch ? _guitarLatch.cells : null,
+              onCellDown: guitarLatch
+                  ? (cell) => setState(() => _guitarLatch.tapInto(c, cell))
+                  : null,
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,

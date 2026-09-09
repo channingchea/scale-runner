@@ -9,6 +9,7 @@ import '../theory/music_theory.dart';
 import '../theory/fretboard.dart';
 import '../theory/inversion_running.dart';
 import 'beat_judge.dart';
+import 'note_latch.dart';
 import 'scale_run_controller.dart' show RunTally, RunTier, runTierFor;
 
 /// Lifecycle of the Inversion Running drill. Self-paced uses [idle]/[running];
@@ -47,7 +48,8 @@ enum StepResult {
 ///
 /// Clock-agnostic: the screen wires [onBeat] to the metronome and
 /// [msSinceBeat]/[beatPeriodMs] to its timing getters; tests inject fakes.
-class InversionRunController extends ChangeNotifier {
+class InversionRunController extends ChangeNotifier
+    implements LatchingInput {
   InversionRunController({
     List<ChordFormula>? chords,
     this.tempoMode = false,
@@ -139,6 +141,16 @@ class InversionRunController extends ChangeNotifier {
   final Set<int> _wrongFlash = {};
   final Set<int> _correctFlash = {};
   Timer? _flashTimer;
+
+  /// Arpeggiated Notes: tapped notes that stay in [_held] after the finger
+  /// lifts. Let go on idle expiry, after a wrong note's flash, and whenever
+  /// the step advances, so each inversion is built from nothing.
+  late final NoteLatch _latch = NoteLatch(onExpire: _onLatchExpired);
+  bool _purgeLatchAfterFlash = false;
+
+  /// The tapped notes the latch is holding for the player.
+  @override
+  Set<int> get latchedNotes => _latch.notes;
 
   // ---- Session stats -----------------------------------------------------
   int stepsCompleted = 0; // voicings landed correctly
@@ -297,6 +309,8 @@ class InversionRunController extends ChangeNotifier {
   void _resetRoundState() {
     _stepIndex = 0;
     _held.clear();
+    _latch.clear();
+    _purgeLatchAfterFlash = false;
     _results = List.filled(_cycle.length, null);
     _graceStepIndex = null;
     _pendingResult = null;
@@ -379,7 +393,23 @@ class InversionRunController extends ChangeNotifier {
     });
   }
 
-  void pressKey(int midiNote) {
+  /// A key went down. [latch] is true for an on-screen tap with Arpeggiated
+  /// Notes on (never for MIDI): the note then stays held after release, and
+  /// a second tap on it puts it out.
+  @override
+  void pressKey(int midiNote, {bool latch = false}) {
+    if (latch && !_latch.toggle(midiNote)) {
+      _held.remove(midiNote);
+      _wrongFlash.remove(midiNote);
+      // Putting a stray note out (a wrong bass, say) can leave the right
+      // voicing standing; self-paced, that lands it, so a fumble never
+      // leaves the player stuck. Tempo mode settles on the tick anyway.
+      if (_phase == InversionPhase.running && !tempoMode && currentVoicingHeld) {
+        _advanceCorrect();
+      }
+      notifyListeners();
+      return;
+    }
     onAnyPress?.call(midiNote);
     final wasHeld = currentVoicingHeld;
     _held.add(midiNote);
@@ -390,9 +420,24 @@ class InversionRunController extends ChangeNotifier {
   }
 
   void releaseKey(int midiNote) {
+    // The latch owns its notes until it lets go of them itself.
+    if (_latch.contains(midiNote)) return;
     _held.remove(midiNote);
     _wrongFlash.remove(midiNote);
     notifyListeners();
+  }
+
+  void _onLatchExpired(Set<int> notes) {
+    _held.removeAll(notes);
+    _purgeLatchAfterFlash = false;
+    notifyListeners();
+  }
+
+  /// Un-hold everything the latch owns.
+  void _dropLatched() {
+    _purgeLatchAfterFlash = false;
+    _held.removeAll(_latch.notes);
+    _latch.clear();
   }
 
   void _judgePress(int midiNote, bool wasHeld) {
@@ -406,6 +451,9 @@ class InversionRunController extends ChangeNotifier {
       streak = 0;
       _tally(false);
       _flash(_wrongFlash, midiNote);
+      // A wrong note means the latched voicing starts over — once the
+      // player has seen which key was red.
+      if (_latch.isNotEmpty) _purgeLatchAfterFlash = true;
       return;
     }
 
@@ -468,6 +516,9 @@ class InversionRunController extends ChangeNotifier {
   /// the new chord is on screen before its first judged beat; self-paced
   /// rolls over instantly, unchanged.
   void _advanceStep() {
+    // Each inversion is built from nothing; a latched voicing does not carry
+    // over the way fingers lifting off the keys would not.
+    _dropLatched();
     _stepIndex++;
     if (_stepIndex >= _cycle.length) {
       cyclesCompleted++;
@@ -492,6 +543,7 @@ class InversionRunController extends ChangeNotifier {
   void _clearFlashes() {
     _wrongFlash.clear();
     _correctFlash.clear();
+    if (_purgeLatchAfterFlash) _dropLatched();
     notifyListeners();
   }
 
@@ -512,6 +564,7 @@ class InversionRunController extends ChangeNotifier {
   void dispose() {
     _midiSub?.cancel();
     _flashTimer?.cancel();
+    _latch.dispose();
     super.dispose();
   }
 }

@@ -12,6 +12,7 @@ import '../quiz/quiz_settings.dart';
 import '../runner/inversion_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
+import '../runner/note_latch.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
@@ -42,6 +43,11 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
   QuizSettings? _settings;
   MetronomeController? _metronome;
   bool _noteSound = true;
+
+  /// Arpeggiated Notes: on-screen taps latch so a voicing builds one note at
+  /// a time; on guitar the shape is kept as cells, one per string.
+  bool _arpeggiated = true;
+  final GuitarLatch _guitarLatch = GuitarLatch();
   bool _tempoMode = false;
   bool _showDots = true;
   bool _showFormula = true;
@@ -118,6 +124,8 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
     _fretLabels = await settings.fretboardLabels();
+    _arpeggiated = await settings.arpeggiatedNotes();
+    _guitarLatch.clear();
     final chords = await settings.invEnabledChords();
     final difficulty = await settings.timingDifficulty();
     final hapticEnabled = await settings.tickHapticEnabled();
@@ -574,8 +582,14 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
               isTargetHint: (_showDots && (c.running || c.countingIn))
                   ? c.isTargetHint
                   : (_) => false,
-              onKeyDown: c.pressKey,
+              onKeyDown: (n) => c.pressKey(n, latch: _arpeggiated),
               onKeyUp: c.releaseKey,
+              latched: _arpeggiated && _instrument == Instrument.guitar
+                  ? _guitarLatch.cells
+                  : null,
+              onCellDown: _arpeggiated && _instrument == Instrument.guitar
+                  ? (cell) => setState(() => _guitarLatch.tapInto(c, cell))
+                  : null,
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,

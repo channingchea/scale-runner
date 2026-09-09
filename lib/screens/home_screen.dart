@@ -297,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 14),
                 _ModeCard(
                   title: 'Chords',
-                  subtitle: 'Build the named chord, holding all the notes at once',
+                  subtitle: 'Build the named chord, note by note or all at once',
                   imagePath: 'assets/icon/Icon_Chords.png',
                   onTap: () => _openQuiz(QuizMode.chord),
                 ),

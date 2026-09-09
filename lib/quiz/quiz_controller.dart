@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../theory/music_theory.dart';
 import '../midi/midi_service.dart';
+import '../runner/note_latch.dart';
 import 'validators.dart';
 
 /// Which kind of quiz is running.
@@ -35,7 +36,7 @@ enum KeyFeedback {
 /// On a correct answer it celebrates and holds (showing a green check); the
 /// next key press advances to a new random prompt. On a wrong note it flashes,
 /// resets the attempt, and lets the user try again.
-class QuizController extends ChangeNotifier {
+class QuizController extends ChangeNotifier implements LatchingInput {
   QuizController({
     required this.mode,
     List<ScaleFormula>? scales,
@@ -79,6 +80,20 @@ class QuizController extends ChangeNotifier {
 
   /// Notes currently held down (taps + MIDI), by MIDI number.
   final Set<int> _held = {};
+
+  /// Arpeggiated Notes: tapped chord tones that stay in [_held] after the
+  /// finger lifts. Owned notes skip [releaseKey]; the latch lets go on idle
+  /// expiry, after a wrong note's flash, and when a round advances. Only the
+  /// chord quiz reads it — the scale quiz is one note at a time anyway.
+  late final NoteLatch _latch = NoteLatch(onExpire: _onLatchExpired);
+
+  /// The tapped notes the latch is holding for the player.
+  @override
+  Set<int> get latchedNotes => _latch.notes;
+
+  /// Set when a wrong note lands with latched notes on the keyboard: the
+  /// latch is purged when the red flash ends, so the chord starts over.
+  bool _purgeLatchAfterFlash = false;
 
   /// Keys flashing wrong, cleared after a short delay.
   final Set<int> _wrongFlash = {};
@@ -160,13 +175,30 @@ class QuizController extends ChangeNotifier {
   /// Fired after score/bestStreak change on a win — e.g. to persist them.
   void Function()? onStatsChanged;
 
-  void pressKey(int midiNote) {
-    onAnyPress?.call(midiNote);
+  /// A key went down. [latch] is true for an on-screen tap with Arpeggiated
+  /// Notes on (never for MIDI): in the chord quiz the note then stays held
+  /// after release, and a second tap on it lets it go.
+  @override
+  void pressKey(int midiNote, {bool latch = false}) {
     // After a win we hold on the green check; the next press advances.
     if (_roundComplete) {
+      onAnyPress?.call(midiNote);
       _nextRound();
       return;
     }
+    if (latch && mode == QuizMode.chord) {
+      if (_latch.toggle(midiNote)) {
+        onAnyPress?.call(midiNote);
+        _held.add(midiNote);
+      } else {
+        _held.remove(midiNote);
+        _wrongFlash.remove(midiNote);
+      }
+      _handleChordNotes();
+      notifyListeners();
+      return;
+    }
+    onAnyPress?.call(midiNote);
     _held.add(midiNote);
     if (mode == QuizMode.scale) {
       _handleScaleNote(midiNote);
@@ -177,6 +209,8 @@ class QuizController extends ChangeNotifier {
   }
 
   void releaseKey(int midiNote) {
+    // The latch owns its notes until it lets go of them itself.
+    if (_latch.contains(midiNote)) return;
     _held.remove(midiNote);
     // Releasing a key immediately clears its red flash (don't wait for the
     // timer) so lifting the offending finger resets the chord visually.
@@ -227,6 +261,9 @@ class QuizController extends ChangeNotifier {
             _flashWrong(n);
           }
         }
+        // A wrong note means the latched chord starts over — once the
+        // player has seen which key was red.
+        if (_latch.isNotEmpty) _purgeLatchAfterFlash = true;
         _registerMiss();
         break;
     }
@@ -237,8 +274,28 @@ class QuizController extends ChangeNotifier {
     _wrongFlashTimer?.cancel();
     _wrongFlashTimer = Timer(const Duration(milliseconds: 450), () {
       _wrongFlash.clear();
+      if (_purgeLatchAfterFlash) _dropLatched();
       notifyListeners();
     });
+  }
+
+  /// Idle expiry: the latch has already let go of [notes]; take them off the
+  /// keyboard and re-judge what is still physically held. A completed round
+  /// is never disturbed (its notes stay green until the next press).
+  void _onLatchExpired(Set<int> notes) {
+    if (_roundComplete) return;
+    _held.removeAll(notes);
+    _purgeLatchAfterFlash = false;
+    _handleChordNotes();
+    notifyListeners();
+  }
+
+  /// Un-hold everything the latch owns and re-evaluate the rest.
+  void _dropLatched() {
+    _purgeLatchAfterFlash = false;
+    _held.removeAll(_latch.notes);
+    _latch.clear();
+    if (!_roundComplete) _handleChordNotes();
   }
 
   void _registerMiss() {
@@ -250,6 +307,8 @@ class QuizController extends ChangeNotifier {
 
   void _win() {
     _roundComplete = true;
+    // The chord is done; nothing left to time out.
+    _latch.clear();
     score++;
     streak++;
     if (streak > bestStreak) bestStreak = streak;
@@ -272,6 +331,8 @@ class QuizController extends ChangeNotifier {
     _roundComplete = false;
     _solvedPcs.clear();
     _held.clear();
+    _latch.clear();
+    _purgeLatchAfterFlash = false;
     _wrongFlash.clear();
 
     // Pick a random enabled root within the lower octave of the keyboard.
@@ -302,6 +363,7 @@ class QuizController extends ChangeNotifier {
   void dispose() {
     _midiSub?.cancel();
     _wrongFlashTimer?.cancel();
+    _latch.dispose();
     super.dispose();
   }
 }

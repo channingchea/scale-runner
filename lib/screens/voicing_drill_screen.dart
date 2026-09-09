@@ -10,6 +10,7 @@ import '../runner/voicing_run_controller.dart';
 import '../social/social_service.dart';
 import '../streak/streak_service.dart';
 import '../theme/app_theme.dart';
+import '../runner/note_latch.dart';
 import '../theory/fretboard.dart';
 import '../theory/voicings.dart';
 import '../ui/responsive.dart';
@@ -58,6 +59,11 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
   QuizSettings? _settings;
   MetronomeController? _metronome;
   bool _noteSound = true;
+
+  /// Arpeggiated Notes: on-screen taps latch so a voicing builds one note at
+  /// a time; on guitar the shape is kept as cells, one per string.
+  bool _arpeggiated = true;
+  final GuitarLatch _guitarLatch = GuitarLatch();
   bool _showDots = true;
   bool _showFormula = true;
   Instrument _instrument = Instrument.piano;
@@ -120,6 +126,7 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
     _leftHanded = await settings.leftHanded();
     _twinMode = await settings.guitarTwinMode();
     _fretLabels = await settings.fretboardLabels();
+    _arpeggiated = await settings.arpeggiatedNotes();
     if (!mounted) {
       metronome.dispose();
       return;
@@ -564,8 +571,14 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
               feedbackFor: c.feedbackFor,
               isTargetHint:
                   (_showDots && c.running) ? c.isTargetHint : (_) => false,
-              onKeyDown: c.pressKey,
+              onKeyDown: (n) => c.pressKey(n, latch: _arpeggiated),
               onKeyUp: c.releaseKey,
+              latched: _arpeggiated && _surface == Instrument.guitar
+                  ? _guitarLatch.cells
+                  : null,
+              onCellDown: _arpeggiated && _surface == Instrument.guitar
+                  ? (cell) => setState(() => _guitarLatch.tapInto(c, cell))
+                  : null,
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,

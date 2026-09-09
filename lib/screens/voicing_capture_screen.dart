@@ -7,6 +7,7 @@ import '../audio/note_player.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../quiz/quiz_settings.dart';
+import '../runner/note_latch.dart';
 import '../theme/app_theme.dart';
 import '../theory/fretboard.dart';
 import '../theory/music_theory.dart';
@@ -54,8 +55,10 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   /// it was tapped on, and a MIDI number cannot say which that was — inside a
   /// five-fret box a note can sit on two strings at once. [_notes] is derived
   /// from this whenever it changes, so everything downstream (the readout,
-  /// the formula, the save) is unchanged.
-  final Set<FretPosition> _cells = {};
+  /// the formula, the save) is unchanged. The one-note-per-string rule lives
+  /// in [GuitarLatch], shared with the drills' Arpeggiated Notes.
+  final GuitarLatch _guitarLatch = GuitarLatch();
+  Set<FretPosition> get _cells => _guitarLatch.cells;
 
   /// The window on the neck. Drills slide theirs to follow the round; capture
   /// has no round to follow, so it opens at the nut and the player moves it.
@@ -165,12 +168,7 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
     final removing = _cells.contains(cell);
     if (!removing && _noteSound) _player.play(cell.midi());
     setState(() {
-      if (removing) {
-        _cells.remove(cell);
-      } else {
-        _cells.removeWhere((c) => c.string == cell.string);
-        _cells.add(cell);
-      }
+      _guitarLatch.tap(cell);
       _syncNotes();
     });
   }

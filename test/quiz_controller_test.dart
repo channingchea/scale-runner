@@ -1,3 +1,4 @@
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scale_runner/theory/music_theory.dart';
 import 'package:scale_runner/quiz/quiz_controller.dart';
@@ -146,6 +147,134 @@ void main() {
         seed: 7,
       );
       expect(c.targetNotes, isNotEmpty);
+    });
+  });
+
+  group('QuizController - Arpeggiated Notes latch (chord mode)', () {
+    const cMaj = ChordFormula('Major', [0, 4, 7]);
+    QuizController make({int seed = 3}) =>
+        QuizController(mode: QuizMode.chord, chords: [cMaj], seed: seed);
+
+    test('C then E then G, each released, completes the chord', () {
+      fakeAsync((async) {
+        final c = make();
+        final notes = c.targetNotes;
+        for (final n in notes) {
+          c.pressKey(n, latch: true);
+          c.releaseKey(n); // the latch owns it: no effect
+          expect(c.feedbackFor(n), isNot(KeyFeedback.idle));
+        }
+        expect(c.roundComplete, isTrue);
+        expect(c.score, 1);
+        expect(c.latchedNotes, isEmpty); // nothing left to time out
+        c.dispose();
+      });
+    });
+
+    test('a second tap on a latched key puts it out', () {
+      fakeAsync((async) {
+        final c = make();
+        final notes = c.targetNotes;
+        c.pressKey(notes[0], latch: true);
+        c.pressKey(notes[1], latch: true);
+        c.pressKey(notes[1], latch: true);
+        expect(c.latchedNotes, {notes[0]});
+        expect(c.feedbackFor(notes[1]), KeyFeedback.idle);
+        c.pressKey(notes[1], latch: true);
+        c.pressKey(notes[2], latch: true);
+        expect(c.roundComplete, isTrue);
+        c.dispose();
+      });
+    });
+
+    test('a wrong note flashes, then the latched chord starts over', () {
+      fakeAsync((async) {
+        final c = make();
+        final notes = c.targetNotes;
+        c.pressKey(notes[0], latch: true);
+        c.pressKey(notes[1], latch: true);
+        final wrong = notes[0] + 1;
+        c.pressKey(wrong, latch: true);
+        expect(c.feedbackFor(wrong), KeyFeedback.wrong);
+        // Still lit while the red flash shows which key was wrong.
+        expect(c.feedbackFor(notes[0]), isNot(KeyFeedback.idle));
+        async.elapse(const Duration(milliseconds: 460));
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(notes[0]), KeyFeedback.idle);
+        expect(c.feedbackFor(wrong), KeyFeedback.idle);
+        expect(c.roundComplete, isFalse);
+        // And the chord can be built again from nothing.
+        for (final n in notes) {
+          c.pressKey(n, latch: true);
+        }
+        expect(c.roundComplete, isTrue);
+        c.dispose();
+      });
+    });
+
+    test('idle expiry resets an incomplete chord but never a completed round',
+        () {
+      fakeAsync((async) {
+        final c = make();
+        final notes = c.targetNotes;
+        c.pressKey(notes[0], latch: true);
+        c.pressKey(notes[1], latch: true);
+        async.elapse(const Duration(seconds: 2));
+        expect(c.latchedNotes, isEmpty);
+        expect(c.feedbackFor(notes[0]), KeyFeedback.idle);
+        expect(c.isDegreeSolved(0), isFalse);
+
+        for (final n in notes) {
+          c.pressKey(n, latch: true);
+        }
+        expect(c.roundComplete, isTrue);
+        async.elapse(const Duration(seconds: 3));
+        expect(c.roundComplete, isTrue);
+        expect(c.feedbackFor(notes[0]), KeyFeedback.correct);
+        c.dispose();
+      });
+    });
+
+    test('MIDI notes still release normally with the setting on', () {
+      fakeAsync((async) {
+        final c = make();
+        final notes = c.targetNotes;
+        c.pressKey(notes[0], latch: true); // a tap
+        c.pressKey(notes[1]); // MIDI: no latch flag, ever
+        c.releaseKey(notes[1]);
+        expect(c.feedbackFor(notes[1]), KeyFeedback.idle);
+        expect(c.feedbackFor(notes[0]), isNot(KeyFeedback.idle));
+        // A MIDI key still down survives the latch expiry.
+        c.pressKey(notes[2]);
+        async.elapse(const Duration(seconds: 2));
+        expect(c.feedbackFor(notes[0]), KeyFeedback.idle);
+        expect(c.feedbackFor(notes[2]), isNot(KeyFeedback.idle));
+        c.dispose();
+      });
+    });
+
+    test('the latch flag is ignored in scale mode', () {
+      final major = const ScaleFormula('Major', [0, 2, 4, 5, 7, 9, 11]);
+      final c = QuizController(mode: QuizMode.scale, scales: [major], seed: 1);
+      final first = c.targetNotes[0];
+      c.pressKey(first, latch: true);
+      c.releaseKey(first);
+      expect(c.latchedNotes, isEmpty);
+      expect(c.feedbackFor(first), KeyFeedback.correct); // solved, not held
+      c.dispose();
+    });
+
+    test('putting a latched note out makes no sound', () {
+      fakeAsync((async) {
+        final c = make();
+        final pressed = <int>[];
+        c.onAnyPress = pressed.add;
+        final n = c.targetNotes[0];
+        c.pressKey(n, latch: true);
+        c.pressKey(n, latch: true);
+        expect(pressed, [n]);
+        c.dispose();
+      });
     });
   });
 }

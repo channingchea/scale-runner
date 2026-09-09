@@ -7,6 +7,7 @@ import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart' show KeyFeedback;
 import '../theory/music_theory.dart';
 import '../theory/voicings.dart';
+import 'note_latch.dart';
 
 /// The "brain" of the Voicings drill.
 ///
@@ -22,7 +23,7 @@ import '../theory/voicings.dart';
 /// Validation is [VoicingSpec.matches] — octave-agnostic but order-strict, so
 /// the shape counts anywhere on the keyboard while a close voicing can never
 /// pass for a drop 2.
-class VoicingRunController extends ChangeNotifier {
+class VoicingRunController extends ChangeNotifier implements LatchingInput {
   VoicingRunController({
     required VoicingSpec spec,
     int startPc = 0,
@@ -52,6 +53,15 @@ class VoicingRunController extends ChangeNotifier {
   final Set<int> _wrongFlash = {};
   final Set<int> _correctFlash = {};
   Timer? _flashTimer;
+
+  /// Arpeggiated Notes: tapped notes that stay in [_held] after the finger
+  /// lifts. Let go on idle expiry, after a wrong flash, and when a key lands.
+  late final NoteLatch _latch = NoteLatch(onExpire: _onLatchExpired);
+  bool _purgeLatchAfterFlash = false;
+
+  /// The tapped notes the latch is holding for the player.
+  @override
+  Set<int> get latchedNotes => _latch.notes;
 
   DateTime? _startedAt;
   Duration _elapsed = Duration.zero;
@@ -109,6 +119,8 @@ class VoicingRunController extends ChangeNotifier {
     _complete = false;
     _running = true;
     _held.clear();
+    _latch.clear();
+    _purgeLatchAfterFlash = false;
     _wrongFlash.clear();
     _correctFlash.clear();
     _flashTimer?.cancel();
@@ -144,7 +156,20 @@ class VoicingRunController extends ChangeNotifier {
     });
   }
 
-  void pressKey(int midiNote) {
+  /// A key went down. [latch] is true for an on-screen tap with Arpeggiated
+  /// Notes on (never for MIDI): the note then stays held after release, and
+  /// a second tap on it puts it out.
+  @override
+  void pressKey(int midiNote, {bool latch = false}) {
+    if (latch && !_latch.toggle(midiNote)) {
+      _held.remove(midiNote);
+      _wrongFlash.remove(midiNote);
+      // Putting a stray note out can leave the right shape standing, exactly
+      // like lifting a finger below.
+      if (_running && currentVoicingHeld) _advance();
+      notifyListeners();
+      return;
+    }
     onAnyPress?.call(midiNote);
     _held.add(midiNote);
     if (_running) _judgePress(midiNote);
@@ -152,6 +177,8 @@ class VoicingRunController extends ChangeNotifier {
   }
 
   void releaseKey(int midiNote) {
+    // The latch owns its notes until it lets go of them itself.
+    if (_latch.contains(midiNote)) return;
     _held.remove(midiNote);
     _wrongFlash.remove(midiNote);
     // Lifting a stray finger can leave the correct shape sounding on its own.
@@ -159,6 +186,19 @@ class VoicingRunController extends ChangeNotifier {
     // the player got there, so a fumble never leaves them stuck.
     if (_running && currentVoicingHeld) _advance();
     notifyListeners();
+  }
+
+  void _onLatchExpired(Set<int> notes) {
+    _held.removeAll(notes);
+    _purgeLatchAfterFlash = false;
+    notifyListeners();
+  }
+
+  /// Un-hold everything the latch owns.
+  void _dropLatched() {
+    _purgeLatchAfterFlash = false;
+    _held.removeAll(_latch.notes);
+    _latch.clear();
   }
 
   /// A press outside the key's chord tones flashes red and is otherwise
@@ -169,13 +209,26 @@ class VoicingRunController extends ChangeNotifier {
   void _judgePress(int midiNote) {
     if (!currentStep.pitchClasses.contains(pitchClassOf(midiNote))) {
       _flash(_wrongFlash, midiNote);
+      if (_latch.isNotEmpty) _purgeLatchAfterFlash = true;
       return;
     }
     _flash(_correctFlash, midiNote);
-    if (currentVoicingHeld) _advance();
+    if (currentVoicingHeld) {
+      _advance();
+    } else if (_latch.isNotEmpty && _held.length >= spec.offsets.length) {
+      // As many latched notes as the shape has, and it is not the shape:
+      // wrong spacing or wrong bass. Show the whole attempt red and start
+      // over — otherwise the player would have to un-tap it note by note.
+      for (final n in _held) {
+        _flash(_wrongFlash, n);
+      }
+      _purgeLatchAfterFlash = true;
+    }
   }
 
   void _advance() {
+    // The next key starts from nothing, as fingers lifting off would.
+    _dropLatched();
     _keysCompleted++;
     _stepIndex++;
     if (_stepIndex >= stepCount) {
@@ -193,6 +246,7 @@ class VoicingRunController extends ChangeNotifier {
   void _clearFlashes() {
     _wrongFlash.clear();
     _correctFlash.clear();
+    if (_purgeLatchAfterFlash) _dropLatched();
     notifyListeners();
   }
 
@@ -213,6 +267,7 @@ class VoicingRunController extends ChangeNotifier {
   void dispose() {
     _midiSub?.cancel();
     _flashTimer?.cancel();
+    _latch.dispose();
     super.dispose();
   }
 }
