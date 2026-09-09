@@ -5,6 +5,7 @@ import '../audio/note_player.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/free_play_controller.dart';
+import '../runner/note_latch.dart';
 import '../theme/app_theme.dart';
 import '../theory/chord_namer.dart';
 import '../theory/fretboard.dart';
@@ -17,8 +18,9 @@ import '../widgets/metronome_bar.dart';
 import '../widgets/rotate_hint_banner.dart';
 
 /// The instrument with no prompt, no score and no session. Whatever is
-/// sounding on the piano is named live: a note, an interval, or a chord. The
-/// metronome bar is a plain practice click here — nothing judges the timing.
+/// sounding is named live — a note, an interval, or a chord — on the piano
+/// and on the neck alike, since the namer only ever sees MIDI numbers. The
+/// metronome bar is a plain practice click here: nothing judges the timing.
 class FreePlayScreen extends StatefulWidget {
   const FreePlayScreen({super.key, required this.midi});
 
@@ -42,12 +44,19 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
   FretBox _box = const FretBox(0);
   final NotePlayer _notes = NotePlayer();
 
+  /// Arpeggiated Notes. On guitar the shape is kept as cells (one note per
+  /// string) and handed to the controller as notes, so a tapped fret stays
+  /// sounding where it was tapped.
+  bool _arpeggiated = true;
+  final GuitarLatch _guitarLatch = GuitarLatch();
+
   static const double _keyboardOctaves =
       (kVoicingKeyboardHigh - kVoicingKeyboardLow) / 12;
 
-  /// Naming lives on the piano for now. The namer itself is instrument-
-  /// agnostic, so lighting the fretboard up is a matter of flipping this.
-  bool get _namesNotes => _instrument == Instrument.piano;
+  /// Whether the guitar is taking taps as cells rather than as presses. Only
+  /// then does a tapped fret stay sounding after the finger lifts.
+  bool get _guitarLatching =>
+      _arpeggiated && _instrument == Instrument.guitar;
 
   @override
   void initState() {
@@ -70,11 +79,7 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
       meter: await settings.meter(),
       onMeterChanged: settings.setMeter,
     )..hapticEnabled = await settings.tickHapticEnabled();
-    // Latching is for building a chord you can then read; on the guitar
-    // there is nothing to read yet, so its taps stay live.
-    final controller = FreePlayController(
-      latchTaps: arpeggiated && instrument == Instrument.piano,
-    )
+    final controller = FreePlayController(latchTaps: arpeggiated)
       ..onAnyPress = (note) {
         if (_noteSound) _notes.play(note);
       }
@@ -91,6 +96,7 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
       _leftHanded = leftHanded;
       _twinMode = twinMode;
       _fretLabels = fretLabels;
+      _arpeggiated = arpeggiated;
       _metronome = metronome;
       _controller = controller;
     });
@@ -185,7 +191,7 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
   }
 
   Widget _buildReadout(FreePlayController c, bool compact) {
-    final readout = _namesNotes ? c.readout : null;
+    final readout = c.readout;
     final titleSize = compact ? 28.0 : (isDesktopPlatform ? 40.0 : 36.0);
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
@@ -210,17 +216,15 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
                         height: 1.1,
                       ),
                     ),
-                    if (_namesNotes) ...[
-                      SizedBox(height: compact ? 6 : 10),
-                      Text(
-                        'Notes, intervals and chords are named as you play',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: compact ? 13 : 14,
-                        ),
+                    SizedBox(height: compact ? 6 : 10),
+                    Text(
+                      'Notes, intervals and chords are named as you play',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: compact ? 13 : 14,
                       ),
-                    ],
+                    ),
                   ]
                 : [
                     FittedBox(
@@ -278,6 +282,10 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
         isTargetHint: c.isTargetHint,
         onKeyDown: c.pressKey,
         onKeyUp: c.releaseKey,
+        latched: _guitarLatching ? _guitarLatch.cells : null,
+        onCellDown: _guitarLatching
+            ? (cell) => setState(() => _guitarLatch.tapInto(c, cell))
+            : null,
         compact: compact,
         leftHanded: _leftHanded,
         twinMode: _twinMode,

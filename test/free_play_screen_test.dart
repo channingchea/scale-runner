@@ -73,7 +73,7 @@ void main() {
     expect(find.text('Play anything'), findsOneWidget);
   });
 
-  testWidgets('guitar: the board and fret stepper show, naming stays blank',
+  testWidgets('guitar: the board, the fret stepper, and live naming',
       (tester) async {
     final settings = await QuizSettings.load();
     await settings.setInstrument(Instrument.guitar);
@@ -86,12 +86,42 @@ void main() {
     await tester.tap(find.byTooltip('Up the neck'));
     await tester.pumpAndSettle();
     expect(find.text('1-5'), findsOneWidget);
+    await tester.tap(find.byTooltip('Toward the nut'));
+    await tester.pumpAndSettle();
 
-    // A cell tap lights the cell but names nothing on day one.
-    final gesture = await tester.startGesture(tester.getCenter(key('F4').first));
+    // A tapped fret stays sounding after the finger lifts, and is named.
+    await tester.tap(key('E2').first); // low E string, open
+    await tester.pumpAndSettle();
+    expect(find.text('E2'), findsWidgets);
+
+    await tester.tap(key('B2').first); // A string, fret 2
+    await tester.pumpAndSettle();
+    expect(find.text('Perfect 5th'), findsOneWidget);
+    expect(find.text('E2 – B2'), findsOneWidget);
+
+    await tester.tap(key('G#2').first); // low E string, fret 4 — replaces E2
+    await tester.pumpAndSettle();
+    expect(find.text('Minor 3rd'), findsOneWidget,
+        reason: 'one note per string: G#2 takes the low E from E2');
+
+    // Two idle seconds and the neck lets go.
+    await tester.pump(const Duration(seconds: 2));
     await tester.pump();
     expect(find.text('Play anything'), findsOneWidget);
+  });
+
+  testWidgets('guitar: with Arpeggiated Notes off, frets are momentary',
+      (tester) async {
+    final settings = await QuizSettings.load();
+    await settings.setInstrument(Instrument.guitar);
+    await settings.setArpeggiatedNotes(false);
+    await pump(tester);
+
+    final gesture = await tester.startGesture(tester.getCenter(key('E2').first));
+    await tester.pump();
+    expect(find.text('E2'), findsWidgets);
     await gesture.up();
     await tester.pump();
+    expect(find.text('Play anything'), findsOneWidget);
   });
 }

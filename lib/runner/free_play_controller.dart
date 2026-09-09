@@ -16,7 +16,7 @@ import 'note_latch.dart';
 /// chord one note at a time. Tapping a latched key again releases it, and
 /// [NoteLatch.idle] with no new tap clears the lot. MIDI notes never latch:
 /// a real instrument has to hold its notes.
-class FreePlayController extends ChangeNotifier {
+class FreePlayController extends ChangeNotifier implements LatchingInput {
   FreePlayController({this._latchTaps = false});
 
   bool _latchTaps;
@@ -36,6 +36,7 @@ class FreePlayController extends ChangeNotifier {
   late final NoteLatch _latch = NoteLatch(onExpire: (_) => notifyListeners());
 
   /// The tapped notes the latch is holding for the player.
+  @override
   Set<int> get latchedNotes => _latch.notes;
 
   /// Everything sounding, held or latched.
@@ -72,8 +73,13 @@ class FreePlayController extends ChangeNotifier {
 
   /// An on-screen key went down. With the latch on, a second tap on a lit
   /// key puts it out (silently).
-  void pressKey(int midiNote) {
-    if (!_latchTaps) {
+  ///
+  /// [latch] is how the fretboard's cell path asks for a latched press; the
+  /// piano does not need it, since [latchTaps] already decides. Either is
+  /// enough, and the two only ever agree.
+  @override
+  void pressKey(int midiNote, {bool latch = false}) {
+    if (!_latchTaps && !latch) {
       noteOn(midiNote);
       return;
     }

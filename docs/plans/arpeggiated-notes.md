@@ -121,6 +121,11 @@ real instrument still has to hold the notes. Applies to piano and guitar.
 - Free Play's own latch code was replaced by `NoteLatch`.
 - The setting is read when a drill screen opens; the drills' own settings
   sheets do not carry it (it lives on the main Settings screen).
-- Still to do on hardware: iPhone piano + guitar with no MIDI in all three
+- Free Play was missed on the first pass: its guitar surface had neither the
+  latch nor `onCellDown`, so the neck did nothing at all there. Fixed
+  2026-09-09 along with guitar naming — see the Free Play plan.
+  `test/guitar_latch_screens_test.dart` now drives all four modes on a neck so
+  this cannot regress unnoticed.
+- Still to do on hardware: iPhone piano + guitar with no MIDI in all four
   modes, macOS mouse, then a MIDI keyboard to confirm nothing latches over
   MIDI.

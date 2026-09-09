@@ -114,6 +114,11 @@ for day one. The metronome bar is present as a plain practice click.
   drills' latching land with the Arpeggiated Notes plan.
 - Guitar taps stay live (no latch) since nothing is named there yet. Flip
   `_namesNotes` in `free_play_screen.dart` to light the readout on day two.
+  **Superseded 2026-09-09:** day two arrived immediately — Channing found the
+  guitar screen dead on first use. The neck now latches through `GuitarLatch`
+  like the drills, and the readout names what is sounding on it, since the
+  namer only ever sees MIDI numbers. `_namesNotes` is gone; the "no naming on
+  the fretboard" non-goal at the top of this plan no longer holds.
 - The fret-window control moved into a shared `FretBoxStepper` widget
   (`lib/widgets/fret_box_stepper.dart`); Voicing capture uses it too.
 - No input-latency refresh: the metronome is a plain click here, nothing
