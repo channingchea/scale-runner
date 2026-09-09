@@ -70,6 +70,7 @@ class QuizSettings {
   static const _guitarFretNumbersKey = 'guitar_fret_numbers';
   static const _guitarDotLabelsOnlyKey = 'guitar_dot_labels_only';
   static const _noteSoundKey = 'note_sound';
+  static const _arpeggiatedNotesKey = 'arpeggiated_notes';
   static const _tickHapticKey = 'tick_haptic';
   static const _introSeenKey = 'intro_seen';
   static const _rotateHintDismissedKey = 'rotate_hint_dismissed';
@@ -219,6 +220,17 @@ class QuizSettings {
 
   Future<void> setNoteSoundEnabled(bool on) async {
     await _prefs.setBool(_noteSoundKey, on);
+  }
+
+  /// Whether on-screen taps latch so a chord can be built one note at a time
+  /// (MIDI input never latches). Global, default on. Read by Free Play today;
+  /// the Chords quiz, Inversion Running and the Voicings drill pick it up with
+  /// the Arpeggiated Notes plan, which also adds the Settings switch.
+  Future<bool> arpeggiatedNotes() async =>
+      await _prefs.getBool(_arpeggiatedNotesKey) ?? true;
+
+  Future<void> setArpeggiatedNotes(bool on) async {
+    await _prefs.setBool(_arpeggiatedNotesKey, on);
   }
 
   /// Whether the metronome's tick buzzes the device, shared across modes.

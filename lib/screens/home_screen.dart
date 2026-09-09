@@ -14,6 +14,7 @@ import '../streak/streak_service.dart';
 import '../ui/responsive.dart';
 import '../widgets/streak_sheets.dart';
 import '../widgets/welcome_sheet.dart';
+import 'free_play_screen.dart';
 import 'quiz_screen.dart';
 import 'social_screen.dart';
 import 'scale_run_screen.dart';
@@ -109,6 +110,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _openSocial() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const SocialScreen()),
+    );
+  }
+
+  /// Free Play is free and ungated: no prompt, no score, nothing to consume.
+  void _openFreePlay() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FreePlayScreen(midi: widget.midi),
+      ),
     );
   }
 
@@ -270,6 +280,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
                 _ModeCard(
+                  title: 'Free Play',
+                  subtitle: 'Play anything. Chords and intervals are named '
+                      'as you play them',
+                  // TODO: Icon_FreePlay.png once the artwork exists.
+                  imagePath: 'assets/icon/Icon_Chords.png',
+                  onTap: _openFreePlay,
+                ),
+                const SizedBox(height: 14),
+                _ModeCard(
                   title: 'Scales',
                   subtitle: 'Play scales from a random key, note by note',
                   imagePath: 'assets/icon/Icon_Scales.png',
@@ -290,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onTap: _openVoicings,
                 ),
                 const SizedBox(height: 14),
-                // The three below are Pro; the two free modes sit above them.
+                // The three below are Pro; the free modes sit above them.
                 _ModeCard(
                   title: 'Scale Running',
                   subtitle:

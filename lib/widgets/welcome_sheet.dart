@@ -65,9 +65,9 @@ class WelcomeSheet extends StatelessWidget {
               _row(
                 Icons.school,
                 'Pick a practice mode',
-                'Scales and Chords quiz you with random prompts. '
-                    'Scale Running is a continuous drill in time with the '
-                    'metronome.',
+                'Free Play names whatever you play. Scales and Chords quiz '
+                    'you with random prompts. Scale Running is a continuous '
+                    'drill in time with the metronome.',
               ),
               _row(
                 Icons.visibility,
