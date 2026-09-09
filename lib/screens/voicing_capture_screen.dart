@@ -12,6 +12,7 @@ import '../theory/fretboard.dart';
 import '../theory/music_theory.dart';
 import '../theory/voicings.dart';
 import '../ui/responsive.dart';
+import '../widgets/fret_box_stepper.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
 import '../widgets/rotate_hint_banner.dart';
@@ -76,15 +77,6 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
   int? _pickedRootPc;
 
   static const double _keyboardOctaves = 3;
-
-  /// Room for the fret-window control above a portrait guitar board.
-  static const double _boxSliderHeight = 36;
-
-  /// Room for the same control standing beside a landscape neck. A neck lying
-  /// flat is already short — spending 36 of its ~164 points on a row above it
-  /// left barely 12 points per string — so there it goes down the left edge,
-  /// outside the board, alongside the string letters.
-  static const double _boxStepperWidth = 46;
 
   bool get _isEditing => widget.existing != null;
 
@@ -182,13 +174,6 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
       _syncNotes();
     });
   }
-
-  void _slideBox(int by) => setState(() {
-        _box = FretBox(
-          (_box.start + by).clamp(0, kMaxFret - _box.width + 1),
-          _box.width,
-        );
-      });
 
   void _toggle(int midiNote) {
     // A note arriving over MIDI has no cell of its own, so on guitar it takes
@@ -539,57 +524,11 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
     );
   }
 
-  /// Slide the window along the neck. The only control of its kind in the
-  /// app — every drill knows which frets it wants, capture does not.
-  ///
-  /// [vertical] stacks it into a narrow column for the landscape neck, where
-  /// there is no height to spare above the board. Up the neck is the top
-  /// button either way: stacked, that is the spinner convention, and the
-  /// board's own fret numbers already say which end is the nut.
-  Widget _buildBoxStepper({required bool vertical}) {
-    final up = IconButton(
-      onPressed: _box.end >= kMaxFret ? null : () => _slideBox(1),
-      icon: const Icon(Icons.add, size: 18),
-      color: AppColors.textSecondary,
-      tooltip: 'Up the neck',
-      visualDensity: VisualDensity.compact,
-    );
-    final down = IconButton(
-      onPressed: _box.start == 0 ? null : () => _slideBox(-1),
-      icon: const Icon(Icons.remove, size: 18),
-      color: AppColors.textSecondary,
-      tooltip: 'Toward the nut',
-      visualDensity: VisualDensity.compact,
-    );
-    // "Frets 0-4" does not fit a 46-point column, and beside a board that now
-    // numbers its own frets the word is redundant anyway.
-    final readout = Text(
-      vertical ? '${_box.start}-${_box.end}' : 'Frets ${_box.start}-${_box.end}',
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: AppColors.textSecondary,
-        fontSize: vertical ? 11 : 12,
-        fontFeatures: tabularFigures,
-      ),
-    );
-
-    if (vertical) {
-      return SizedBox(
-        width: _boxStepperWidth,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [up, readout, down],
-        ),
+  Widget _buildBoxStepper({required bool vertical}) => FretBoxStepper(
+        box: _box,
+        onChanged: (b) => setState(() => _box = b),
+        vertical: vertical,
       );
-    }
-    return SizedBox(
-      height: _boxSliderHeight,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [down, SizedBox(width: 74, child: readout), up],
-      ),
-    );
-  }
 
   Widget _buildKeyboard(double height) {
     final compact = isCompactLayout(MediaQuery.of(context).size.height);
@@ -639,7 +578,9 @@ class _VoicingCaptureScreenState extends State<VoicingCaptureScreen> {
                 children: [
                   if (_onGuitar) _buildBoxStepper(vertical: false),
                   SizedBox(
-                    height: _onGuitar ? height - _boxSliderHeight : height,
+                    height: _onGuitar
+                        ? height - FretBoxStepper.rowHeight
+                        : height,
                     child: surface,
                   ),
                 ],
