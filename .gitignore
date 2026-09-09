@@ -46,3 +46,6 @@ app.*.map.json
 
 # Local scratch: files staged for manual deletion (contains tester PII).
 _to_delete/
+
+# Cowork session output folder (copies of docs that live elsewhere in the repo).
+Claude outputs/
