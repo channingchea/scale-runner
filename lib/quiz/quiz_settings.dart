@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../onboarding/mode_guides.dart' show GuideMode;
 import '../runner/meter.dart';
 import '../theory/music_theory.dart';
 import '../theory/scale_running.dart';
@@ -206,6 +207,16 @@ class QuizSettings {
 
   Future<void> setIntroSeen() async {
     await _prefs.setBool(_introSeenKey, true);
+  }
+
+  /// Whether the first-entry guide sheet for [mode] has been shown on this
+  /// device. Independent of [introSeen] (the app-level welcome) and of every
+  /// other mode's guide.
+  Future<bool> guideSeen(GuideMode mode) async =>
+      await _prefs.getBool(mode.prefsKey) ?? false;
+
+  Future<void> setGuideSeen(GuideMode mode) async {
+    await _prefs.setBool(mode.prefsKey, true);
   }
 
   /// Whether the portrait "rotate for bigger keys" banner has been dismissed.

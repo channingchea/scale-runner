@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -8,14 +7,15 @@ import 'package:scale_runner/quiz/quiz_settings.dart';
 import 'package:scale_runner/screens/free_play_screen.dart';
 import 'package:scale_runner/theory/fretboard.dart';
 
+import 'helpers/guides_seen.dart';
+
 /// Keys and cells are aimed at through their semantics labels (note names),
 /// the same way the capture tests do, so nothing here depends on layout maths.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
   });
 
   Future<void> pump(WidgetTester tester) async {

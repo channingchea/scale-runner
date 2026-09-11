@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/beat_debug.dart';
 import '../runner/jam_mode_controller.dart';
@@ -17,6 +18,7 @@ import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/jam_mode_settings_sheet.dart';
 import '../widgets/jam_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
@@ -65,6 +67,9 @@ class _JamModeScreenState extends State<JamModeScreen> {
     super.initState();
     WakelockPlus.enable();
     _bootstrap();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, GuideMode.jamMode));
   }
 
   Future<void> _bootstrap() async {
@@ -333,6 +338,12 @@ class _JamModeScreenState extends State<JamModeScreen> {
                   ? AppColors.correct
                   : AppColors.textSecondary,
               size: 20,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: 'Jam Mode guide',
+              onPressed: () => ModeGuideSheet.show(context, GuideMode.jamMode),
             ),
             IconButton(
               icon: const Icon(Icons.settings),

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
 import '../midi/midi_service.dart';
+import '../onboarding/mode_guides.dart';
 import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
 import '../theory/voicings.dart';
 import '../ui/responsive.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/voicing_thumbnail.dart';
 import 'voicing_capture_screen.dart';
 import 'voicing_drill_screen.dart';
@@ -67,6 +69,9 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
       if (q != _query) setState(() => _query = q);
     });
     _load();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, GuideMode.voicings));
   }
 
   @override
@@ -719,6 +724,11 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
       appBar: AppBar(
         title: const Text('Voicings'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Voicings guide',
+            onPressed: () => ModeGuideSheet.show(context, GuideMode.voicings),
+          ),
           if (!_loading && _voicings.isNotEmpty) ...[
             IconButton(
               icon: const Icon(Icons.create_new_folder_outlined),

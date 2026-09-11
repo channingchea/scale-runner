@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../quiz/quiz_controller.dart';
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/note_latch.dart';
 import '../streak/streak_service.dart';
@@ -16,6 +17,7 @@ import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/quiz_settings_sheet.dart';
 import '../widgets/reminder_prompt_sheet.dart';
@@ -70,7 +72,13 @@ class _QuizScreenState extends State<QuizScreen> {
     super.initState();
     WakelockPlus.enable();
     _bootstrap();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, _guideMode));
   }
+
+  GuideMode get _guideMode =>
+      widget.mode == QuizMode.scale ? GuideMode.scales : GuideMode.chords;
 
   Future<void> _bootstrap() async {
     final settings = await QuizSettings.load();
@@ -332,6 +340,12 @@ class _QuizScreenState extends State<QuizScreen> {
                   ? AppColors.correct
                   : AppColors.textSecondary,
               size: 20,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: '$_modeLabel guide',
+              onPressed: () => ModeGuideSheet.show(context, _guideMode),
             ),
             IconButton(
               icon: const Icon(Icons.settings),

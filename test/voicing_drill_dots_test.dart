@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -9,6 +8,8 @@ import 'package:scale_runner/screens/voicing_drill_screen.dart';
 import 'package:scale_runner/theory/fretboard.dart' show Instrument;
 import 'package:scale_runner/widgets/instrument_surface.dart';
 
+import 'helpers/guides_seen.dart';
+
 /// The Target dots switch has to reach the keyboard mid-drill: it is the one
 /// setting the player is meant to flip the moment the shape starts to stick,
 /// without throwing the run away.
@@ -16,8 +17,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
   });
 
   Future<void> pump(WidgetTester tester) async {

@@ -3,6 +3,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../audio/note_player.dart';
 import '../midi/midi_service.dart';
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/free_play_controller.dart';
 import '../runner/note_latch.dart';
@@ -14,6 +15,7 @@ import '../ui/responsive.dart';
 import '../widgets/fret_box_stepper.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/rotate_hint_banner.dart';
 
@@ -63,6 +65,9 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
     super.initState();
     WakelockPlus.enable();
     _bootstrap();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, GuideMode.freePlay));
   }
 
   Future<void> _bootstrap() async {
@@ -170,6 +175,8 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
               tooltip: 'Back',
               onPressed: () => Navigator.of(context).maybePop(),
             ),
+            // Balances the "?" button on the right so the click stays centred.
+            const SizedBox(width: 48),
             const Spacer(),
             if (_metronome != null) MetronomeBar(controller: _metronome!),
             const Spacer(),
@@ -183,6 +190,12 @@ class _FreePlayScreenState extends State<FreePlayScreen> {
                     : AppColors.textSecondary,
                 size: 20,
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: 'Free Play guide',
+              onPressed: () => ModeGuideSheet.show(context, GuideMode.freePlay),
             ),
           ],
         ),

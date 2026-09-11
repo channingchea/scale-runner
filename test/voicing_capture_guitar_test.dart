@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -8,6 +7,8 @@ import 'package:scale_runner/quiz/quiz_settings.dart';
 import 'package:scale_runner/screens/voicing_capture_screen.dart';
 import 'package:scale_runner/theory/fretboard.dart';
 import 'package:scale_runner/widgets/fretboard_view.dart' show FretboardView;
+
+import 'helpers/guides_seen.dart';
 
 /// Capture is the one screen where the guitar is not merely a different
 /// picture of the same model: the shape is cells, not pitches, because a note
@@ -21,8 +22,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
     final settings = await QuizSettings.load();
     await settings.setInstrument(Instrument.guitar);
   });

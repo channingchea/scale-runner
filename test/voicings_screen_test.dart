@@ -6,7 +6,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -14,6 +13,8 @@ import 'package:scale_runner/quiz/quiz_settings.dart';
 import 'package:scale_runner/screens/voicings_screen.dart';
 import 'package:scale_runner/theme/app_theme.dart';
 import 'package:scale_runner/theory/voicings.dart';
+
+import 'helpers/guides_seen.dart';
 
 const _drop2 = [-1, 4, 7, 12];
 
@@ -48,8 +49,7 @@ void main() {
   late QuizSettings settings;
 
   setUp(() async {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
     settings = await QuizSettings.load();
   });
 

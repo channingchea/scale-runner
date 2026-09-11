@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/inversion_run_controller.dart';
 import '../social/social_service.dart';
@@ -17,6 +18,7 @@ import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/inversion_run_settings_sheet.dart';
 import '../widgets/inversion_session_summary_sheet.dart';
 import '../widgets/metronome_bar.dart';
@@ -70,6 +72,9 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
     super.initState();
     WakelockPlus.enable();
     _bootstrap();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, GuideMode.inversionRunning));
   }
 
   Future<void> _bootstrap() async {
@@ -319,6 +324,13 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
                   ? AppColors.correct
                   : AppColors.textSecondary,
               size: 20,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: 'Inversion Running guide',
+              onPressed: () =>
+                  ModeGuideSheet.show(context, GuideMode.inversionRunning),
             ),
             IconButton(
               icon: const Icon(Icons.settings),

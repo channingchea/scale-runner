@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -10,6 +9,8 @@ import 'package:scale_runner/screens/quiz_screen.dart';
 import 'package:scale_runner/theory/fretboard.dart';
 import 'package:scale_runner/widgets/fretboard_view.dart' show FretboardView;
 
+import 'helpers/guides_seen.dart';
+
 /// The Arpeggiated Notes wiring between the Chords quiz screen and its
 /// fretboard: with the setting on, the board runs in cell mode and the
 /// screen's cell set is what it lights; with it off, taps are plain presses.
@@ -17,8 +18,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
     final settings = await QuizSettings.load();
     await settings.setInstrument(Instrument.guitar);
   });

@@ -5,6 +5,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../audio/note_player.dart';
 import '../midi/midi_service.dart';
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/voicing_run_controller.dart';
 import '../social/social_service.dart';
@@ -16,6 +17,7 @@ import '../theory/voicings.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/reminder_prompt_sheet.dart';
 import '../widgets/rotate_hint_banner.dart';
@@ -342,6 +344,12 @@ class _VoicingDrillScreenState extends State<VoicingDrillScreen> {
                   ? AppColors.correct
                   : AppColors.textSecondary,
               size: 20,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: 'Voicings guide',
+              onPressed: () => ModeGuideSheet.show(context, GuideMode.voicings),
             ),
             IconButton(
               icon: const Icon(Icons.settings),

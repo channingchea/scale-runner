@@ -9,6 +9,7 @@ import '../midi/ble_latency.dart';
 import '../midi/midi_service.dart';
 import '../purchases/paywall_sheet.dart';
 import '../quiz/quiz_controller.dart' show QuizController;
+import '../onboarding/mode_guides.dart';
 import '../quiz/quiz_settings.dart';
 import '../runner/beat_debug.dart';
 import '../runner/scale_run_controller.dart';
@@ -18,6 +19,7 @@ import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/instrument_surface.dart';
+import '../widgets/mode_guide_sheet.dart';
 import '../widgets/metronome_bar.dart';
 import '../widgets/rotate_hint_banner.dart';
 import '../widgets/reminder_prompt_sheet.dart';
@@ -58,6 +60,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     super.initState();
     WakelockPlus.enable();
     _bootstrap();
+    // First entry on this device shows the mode guide; "?" replays it.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => maybeShowGuide(context, GuideMode.scaleRunning));
   }
 
   Future<void> _bootstrap() async {
@@ -330,6 +335,13 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
                   ? AppColors.correct
                   : AppColors.textSecondary,
               size: 20,
+            ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              color: AppColors.textPrimary,
+              tooltip: 'Scale Running guide',
+              onPressed: () =>
+                  ModeGuideSheet.show(context, GuideMode.scaleRunning),
             ),
             IconButton(
               icon: const Icon(Icons.settings),

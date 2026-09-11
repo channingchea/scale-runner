@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'package:scale_runner/midi/midi_service.dart';
@@ -14,6 +13,8 @@ import 'package:scale_runner/theory/fretboard.dart' show Instrument;
 import 'package:scale_runner/widgets/fretboard_view.dart' show FretboardView;
 import 'package:scale_runner/widgets/instrument_surface.dart';
 
+import 'helpers/guides_seen.dart';
+
 /// Arpeggiated Notes on the fretboard: a tapped cell has to stay sounding
 /// after the finger lifts, in every mode that offers the latch. Checked
 /// through [InstrumentSurface.feedbackFor], which is what actually paints the
@@ -22,8 +23,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferencesAsyncPlatform.instance =
-        InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = prefsWithGuidesSeen();
     final settings = await QuizSettings.load();
     await settings.setInstrument(Instrument.guitar);
   });
