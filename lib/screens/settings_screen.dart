@@ -5,9 +5,12 @@ import '../notifications/notification_service.dart';
 import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
+import '../social/social_service.dart';
+import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theory/fretboard.dart';
 import '../ui/responsive.dart';
+import 'social_screen.dart';
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import '../widgets/timing_difficulty_selector.dart';
 
@@ -250,6 +253,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (d) => setState(() => _difficulty = d),
                   ),
                   _sectionDivider(),
+                  _sectionHeader('Account'),
+                  _accountTiles(),
+                  _sectionDivider(),
                   _sectionHeader('Purchases'),
                   _unlockProTile(),
                   _restoreTile(),
@@ -347,6 +353,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
           size: 16, color: AppColors.textMuted),
       onTap: _unlockPro,
     );
+  }
+
+  /// Signed out: one row that leads to sign-in. Signed in: who, how fresh
+  /// the sync is, a manual sync, and sign out. Rebuilds as either service
+  /// changes, so "Syncing..." and "Last synced" stay live.
+  Widget _accountTiles() {
+    final social = SocialService.instance;
+    final sync = SyncService.instance;
+    return ListenableBuilder(
+      listenable: Listenable.merge([social, sync]),
+      builder: (context, _) {
+        if (!social.isSignedIn) {
+          return ListTile(
+            leading:
+                const Icon(Icons.cloud_outlined, color: AppColors.textSecondary),
+            title: const Text('Sign in to back up and sync',
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+            subtitle: const Text(
+                'Your voicings, practice settings, stats and streak follow '
+                'your account to every device',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right,
+                color: AppColors.textSecondary),
+            onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SocialScreen())),
+          );
+        }
+        final syncing = sync.state == SyncState.syncing;
+        return Column(
+          children: [
+            ListTile(
+              leading: Icon(
+                  sync.state == SyncState.waiting
+                      ? Icons.cloud_off_outlined
+                      : Icons.cloud_done_outlined,
+                  color: AppColors.textSecondary),
+              title: Text(social.profile?.displayName ?? 'Signed in',
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500)),
+              subtitle: Text(_syncStatus(sync),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 12)),
+              trailing: syncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : IconButton(
+                      tooltip: 'Sync now',
+                      icon: const Icon(Icons.sync,
+                          color: AppColors.textSecondary),
+                      onPressed: sync.sync,
+                    ),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.logout, color: AppColors.textSecondary),
+              title: const Text('Sign out',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500)),
+              subtitle: const Text(
+                  'Everything stays on this device; it just stops syncing',
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              onTap: social.signOut,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _syncStatus(SyncService sync) {
+    switch (sync.state) {
+      case SyncState.syncing:
+        return 'Syncing...';
+      case SyncState.waiting:
+        return 'Waiting for connection';
+      case SyncState.idle:
+        final at = sync.lastSyncedAt;
+        if (at == null) return 'Not synced yet';
+        final ago = DateTime.now().difference(at);
+        if (ago.inMinutes < 1) return 'Synced just now';
+        if (ago.inHours < 1) return 'Last synced ${ago.inMinutes} min ago';
+        if (ago.inDays < 1) return 'Last synced ${ago.inHours} h ago';
+        return 'Last synced ${ago.inDays} d ago';
+    }
   }
 
   Widget _restoreTile() {
@@ -472,16 +568,23 @@ class _PrivacyPolicyScreen extends StatelessWidget {
                   'the app.'),
               _section(context, 'Optional Account & Social Features'),
               _body(context,
-                  'If you sign in (with Apple or Google) to use the friends '
-                  'features, the following is stored on our servers (Supabase):\n\n'
+                  'If you sign in (with Apple, Google or email) to sync '
+                  'across devices or use the friends features, the following '
+                  'is stored on our servers (Supabase):\n\n'
                   '  • Your display name and a generated avatar\n'
                   '  • Your practice streak (current, best, total days)\n'
+                  '  • Your saved voicings, folders and tags\n'
+                  '  • Your practice settings (enabled scales, chords, keys '
+                  'and drill options)\n'
+                  '  • Your practice statistics, per device\n'
                   '  • Your friend connections, invites, and applause\n\n'
-                  'This data is visible only to friends you connect with. '
-                  'There is no public profile or global leaderboard. You can '
-                  'delete your account at any time from the Friends screen, '
-                  'which permanently removes all of it from our servers. '
-                  'Without an account, nothing ever leaves your device.'),
+                  'Your streak, this week\'s practice and per-mode scores are '
+                  'visible only to friends you connect with; everything else '
+                  'is private to your account. There is no public profile or '
+                  'global leaderboard. You can delete your account at any '
+                  'time from the Friends screen, which permanently removes '
+                  'all of it from our servers. Without an account, nothing '
+                  'ever leaves your device.'),
               _section(context, 'MIDI and Bluetooth'),
               _body(context,
                   'If you connect a MIDI keyboard via USB or Bluetooth, the app '

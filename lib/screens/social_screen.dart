@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import '../social/social_backend.dart';
 import '../social/social_models.dart';
 import '../social/social_service.dart';
+import '../sync/sync_service.dart';
 import '../streak/streak_service.dart';
 import '../theme/app_theme.dart';
 import '../ui/responsive.dart';
@@ -100,9 +101,10 @@ class _SocialScreenState extends State<SocialScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Sign in to back up your streak, invite friends, applaud '
-                'their practice, and climb the streak leaderboard. '
-                'Everything else works without an account.',
+                'Sign in to keep your voicings, settings, stats and streak '
+                'in sync across your devices, invite friends, applaud their '
+                'practice, and climb the streak leaderboard. Everything else '
+                'works without an account.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: AppColors.textSecondary, fontSize: 14, height: 1.4),
@@ -170,7 +172,14 @@ class _SocialScreenState extends State<SocialScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error)));
     } else if (_social.isSignedIn) {
+      final messenger = ScaffoldMessenger.of(context);
       await _social.markActivitySeen();
+      // The sign-in kicked off a sync; say so once it has landed.
+      await SyncService.instance.sync();
+      if (SyncService.instance.state == SyncState.idle) {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Your library is backed up.')));
+      }
     }
   }
 
@@ -586,8 +595,8 @@ class _SocialScreenState extends State<SocialScreen> {
   Future<void> _confirmSignOut() async {
     final ok = await _confirm(
       title: 'Sign out?',
-      body: 'Your local streak stays on this device. Friends and applause '
-          'come back when you sign in again.',
+      body: 'Everything stays on this device; it just stops syncing. '
+          'Friends and applause come back when you sign in again.',
       confirmLabel: 'Sign out',
     );
     if (ok) await _social.signOut();
@@ -596,9 +605,9 @@ class _SocialScreenState extends State<SocialScreen> {
   Future<void> _confirmDelete() async {
     final ok = await _confirm(
       title: 'Delete your account?',
-      body: 'This permanently removes your profile, friendships, and synced '
-          'streak from our servers. Your local practice data stays on this '
-          'device. This can\'t be undone.',
+      body: 'This permanently removes your profile, friendships, and every '
+          'synced voicing, setting and stat from our servers. Your local '
+          'copy stays on this device. This can\'t be undone.',
       confirmLabel: 'Delete forever',
       destructive: true,
     );
