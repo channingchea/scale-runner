@@ -47,6 +47,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
   KeyIncrement _increment = KeyIncrement.fifths;
   int _startKeyPc = 0;
   int _reps = 1;
+  bool _keyCountIn = true;
   bool _showDots = true;
   bool _loading = true;
 
@@ -63,6 +64,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
     final increment = await widget.settings.runKeyIncrement();
     final startKeyPc = await widget.settings.runStartKeyPc();
     final reps = await widget.settings.runRepsPerKey();
+    final keyCountIn = await widget.settings.runKeyCountIn();
     final showDots = await widget.settings.runShowDots();
     if (!mounted) return;
     setState(() {
@@ -72,6 +74,7 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
       _increment = increment;
       _startKeyPc = startKeyPc;
       _reps = reps;
+      _keyCountIn = keyCountIn;
       _showDots = showDots;
       _loading = false;
     });
@@ -233,6 +236,19 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
                             style: TextStyle(
                                 color: AppColors.textSecondary, fontSize: 12),
                           ),
+                        ),
+                        _switchTile(
+                          value: _keyCountIn,
+                          onChanged: (v) async {
+                            setState(() => _keyCountIn = v);
+                            await widget.settings.setRunKeyCountIn(v);
+                            widget.onChanged();
+                          },
+                          title: 'Count in between keys',
+                          subtitle:
+                              'One bar of clicks before each new key so you '
+                              'can reset your hands. Off rolls straight into '
+                              'the next key.',
                         ),
                         _sectionDivider(),
                         _sectionHeader('Challenge'),

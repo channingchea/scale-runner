@@ -4,12 +4,17 @@ import 'package:scale_runner/theory/scale_running.dart';
 
 /// Builds a controller with a fake clock at 600ms/beat. [sinceBeat] controls
 /// where presses land relative to the last tick.
+///
+/// [keyCountIn] defaults to OFF here (the app default is on) so the
+/// key-rollover tests below keep their instant-advance tick counts; the
+/// 'between-key count-in' group turns it on explicitly.
 ScaleRunController makeController({
   bool chords = true,
   ChordProgression? progression,
   KeyIncrement increment = KeyIncrement.fifths,
   int Function()? sinceBeat,
   int repsPerKey = 1,
+  bool keyCountIn = false,
 }) {
   final c = ScaleRunController(
     chordsEnabled: chords,
@@ -17,6 +22,7 @@ ScaleRunController makeController({
     increment: increment,
     startKeyPc: 0, // C
     repsPerKey: repsPerKey,
+    keyCountInEnabled: keyCountIn,
   );
   c.beatPeriodMs = () => 600;
   c.msSinceBeat = sinceBeat ?? () => 0;
@@ -350,8 +356,10 @@ void main() {
     test('tier labels match Jam Mode', () {
       expect(RunTier.openingAct.label, 'Opening Act');
       expect(RunTier.localLegend.label, 'Local Legend');
-      expect(RunTier.internationalRecordingStar.label,
-          'International Recording Star');
+      expect(
+        RunTier.internationalRecordingStar.label,
+        'International Recording Star',
+      );
     });
   });
 
@@ -408,30 +416,34 @@ void main() {
       expect(ended, 1);
     });
 
-    test('stopping early surfaces the session once with a partial key count',
-        () {
-      final c = makeController(chords: false);
-      var ended = 0;
-      c.onSessionEnd = () => ended++;
-      countIn(c);
-      for (var i = 0; i < 3 * 8; i++) {
-        c.onBeat(); // 3 keys
-      }
-      expect(c.keysCompleted, 3);
-      c.stop();
-      expect(ended, 1);
-      c.stop(); // idle -> no-op, no second fire
-      expect(ended, 1);
-    });
+    test(
+      'stopping early surfaces the session once with a partial key count',
+      () {
+        final c = makeController(chords: false);
+        var ended = 0;
+        c.onSessionEnd = () => ended++;
+        countIn(c);
+        for (var i = 0; i < 3 * 8; i++) {
+          c.onBeat(); // 3 keys
+        }
+        expect(c.keysCompleted, 3);
+        c.stop();
+        expect(ended, 1);
+        c.stop(); // idle -> no-op, no second fire
+        expect(ended, 1);
+      },
+    );
 
-    test('onSessionEnd does not fire when stop() runs on an idle controller',
-        () {
-      final c = makeController();
-      var ended = 0;
-      c.onSessionEnd = () => ended++;
-      c.stop();
-      expect(ended, 0);
-    });
+    test(
+      'onSessionEnd does not fire when stop() runs on an idle controller',
+      () {
+        final c = makeController();
+        var ended = 0;
+        c.onSessionEnd = () => ended++;
+        c.stop();
+        expect(ended, 0);
+      },
+    );
   });
 
   group('snapshots and reset', () {
@@ -653,8 +665,11 @@ void main() {
       expect(c.notesClose, 1);
       expect(c.notesWrong, 0, reason: 'not also punished as a wrong pitch');
       expect(c.streak, 1);
-      expect(c.resultAt(7), isNull,
-          reason: "the new bar's beat 7 slot is left alone");
+      expect(
+        c.resultAt(7),
+        isNull,
+        reason: "the new bar's beat 7 slot is left alone",
+      );
     });
 
     test('grace expires after one beat, not at the end of the bar', () {
@@ -674,8 +689,11 @@ void main() {
       c.onBeat(); // -> beat 4, three beats past the miss
       since = 100;
       c.pressKey(notes[1]); // D, still inside graceMs of beat 4's tick
-      expect(c.resultAt(1), NoteResult.missed,
-          reason: 'grace only covers the beat immediately after the miss');
+      expect(
+        c.resultAt(1),
+        NoteResult.missed,
+        reason: 'grace only covers the beat immediately after the miss',
+      );
       expect(c.notesWrong, 1);
     });
   });
@@ -697,18 +715,39 @@ void main() {
     for (final beats in [3, 4, 5, 6]) {
       test('a $beats-beat count-in fires on tick 1, the downbeat, and each '
           'new scale', () {
-        final c = ScaleRunController(
-          chordsEnabled: false,
-          startKeyPc: 0,
-          beatsPerBar: beats,
-        )
-          ..beatPeriodMs = (() => 600)
-          ..msSinceBeat = (() => 0);
+        final c =
+            ScaleRunController(
+                chordsEnabled: false,
+                startKeyPc: 0,
+                beatsPerBar: beats,
+                keyCountInEnabled: false, // instant rollover between scales
+              )
+              ..beatPeriodMs = (() => 600)
+              ..msSinceBeat = (() => 0);
         // Count-in ticks 1..beats, downbeat at beats+1, then 8-beat bars:
         // the next scale starts 8 ticks after the downbeat, and so on.
         final starts = barStarts(c, beats + 1 + 16);
         expect(starts, [1, beats + 1, beats + 9, beats + 17]);
         expect(c.beatsUntilDownbeat, 0);
+        c.dispose();
+      });
+
+      test('a $beats-beat between-key count-in is the same length as the '
+          'opening one', () {
+        final c =
+            ScaleRunController(
+                chordsEnabled: false,
+                startKeyPc: 0,
+                beatsPerBar: beats,
+              )
+              ..beatPeriodMs = (() => 600)
+              ..msSinceBeat = (() => 0);
+        // The tick that closes scale 1 (beats+9) is count-in beat 1 of
+        // scale 2, whose downbeat lands `beats` ticks later.
+        final starts = barStarts(c, beats + 9 + beats);
+        expect(starts, [1, beats + 1, beats + 9, beats + 9 + beats]);
+        expect(c.phase, RunPhase.running);
+        expect(c.keyPc, 7);
         c.dispose();
       });
     }
@@ -725,6 +764,225 @@ void main() {
       c.onBeat();
       expect(c.phase, RunPhase.running);
       c.dispose();
+    });
+  });
+
+  group('between-key count-in', () {
+    // C major run from MIDI 48: C D E F G A B C.
+    const cNotes = [48, 50, 52, 53, 55, 57, 59, 60];
+
+    /// Chords off, count-in on: play every beat of the C run on time. The
+    /// 8th tick closes the key and is count-in beat 1 of the next.
+    ScaleRunController playFirstKey({int Function()? sinceBeat}) {
+      final c = makeController(
+        chords: false,
+        keyCountIn: true,
+        sinceBeat: sinceBeat,
+      );
+      countIn(c);
+      for (final n in cNotes) {
+        c.pressKey(n);
+        c.releaseKey(n);
+        c.onBeat();
+      }
+      return c;
+    }
+
+    test('finishing a key enters a one-bar count-in naming the next key', () {
+      final c = playFirstKey();
+      expect(c.phase, RunPhase.countingIn);
+      expect(c.isKeyTransition, isTrue);
+      expect(c.keyPc, 7, reason: 'C -> G by fifths, set before the count-in');
+      expect(c.keyLabel, 'G Major');
+      expect(c.currentStep.runPcs[0], 7, reason: 'targets preview G');
+      expect(c.keysCompleted, 1);
+      expect(c.beatsUntilDownbeat, 4);
+      c.onBeat();
+      expect(c.beatsUntilDownbeat, 3);
+      c.onBeat();
+      expect(c.beatsUntilDownbeat, 2);
+      c.onBeat();
+      expect(c.beatsUntilDownbeat, 1);
+      c.onBeat(); // downbeat of G
+      expect(c.phase, RunPhase.running);
+      expect(c.isKeyTransition, isFalse);
+      expect(c.beatIndex, 0);
+      expect(c.stepIndex, 0);
+      expect(c.keyPc, 7);
+    });
+
+    test('the opening count-in is not a key transition', () {
+      final c = makeController(chords: false, keyCountIn: true);
+      c.start();
+      expect(c.phase, RunPhase.countingIn);
+      expect(c.isKeyTransition, isFalse);
+    });
+
+    test('off reproduces the instant rollover', () {
+      final c = makeController(chords: false, keyCountIn: false);
+      countIn(c);
+      for (var i = 0; i < 8; i++) {
+        c.onBeat();
+      }
+      expect(c.phase, RunPhase.running);
+      expect(c.keyPc, 7);
+      expect(c.beatIndex, 0);
+    });
+
+    test('scoring and streak hold still through the count-in', () {
+      final c = playFirstKey();
+      expect(c.notesJudged, 8);
+      expect(c.notesOnBeat, 8);
+      expect(c.notesMissed, 0);
+      expect(c.streak, 8);
+      for (var i = 0; i < 4; i++) {
+        c.onBeat(); // 3 count-in beats + the downbeat
+      }
+      expect(c.phase, RunPhase.running);
+      expect(c.notesJudged, 8, reason: 'no beats settle during a count-in');
+      expect(c.notesMissed, 0);
+      expect(c.streak, 8);
+      expect(c.keyScores['C Major']!.attempts, 8);
+      expect(c.keyScores.containsKey('G Major'), isFalse);
+    });
+
+    test('onBarStart fires on count-in beat 1 and again on the downbeat', () {
+      final c = makeController(chords: false, keyCountIn: true);
+      var bars = 0;
+      c.onBarStart = () => bars++;
+      countIn(c);
+      for (var i = 0; i < 7; i++) {
+        c.onBeat();
+      }
+      bars = 0;
+      c.onBeat(); // closes C, count-in beat 1 of G
+      expect(bars, 1, reason: 'accent on the first count-in beat');
+      c.onBeat();
+      c.onBeat();
+      c.onBeat();
+      expect(bars, 1, reason: 'no accent mid count-in');
+      c.onBeat(); // downbeat
+      expect(bars, 2);
+    });
+
+    test(
+      'an early press in the last count-in window claims the new downbeat',
+      () {
+        var since = 0;
+        final c = playFirstKey(sinceBeat: () => since);
+        c.onBeat();
+        c.onBeat();
+        c.onBeat(); // last count-in window
+        expect(c.beatsUntilDownbeat, 1);
+        since = 560; // 40ms ahead of the G downbeat
+        c.pressKey(67); // G
+        c.onBeat(); // downbeat applies the pending hit
+        expect(c.phase, RunPhase.running);
+        expect(c.resultAt(0), NoteResult.onBeat);
+        expect(c.notesJudged, 9);
+        expect(c.keyScores['G Major']!.correct, 1);
+      },
+    );
+
+    test(
+      'the previous key\'s last note keeps its grace across the boundary',
+      () {
+        var since = 0;
+        final c = makeController(
+          chords: false,
+          keyCountIn: true,
+          sinceBeat: () => since,
+        );
+        countIn(c);
+        for (var i = 0; i < 7; i++) {
+          c.pressKey(cNotes[i]);
+          c.releaseKey(cNotes[i]);
+          c.onBeat();
+        }
+        c.onBeat(); // beat 7 unplayed -> missed; count-in beat 1 of G
+        expect(c.phase, RunPhase.countingIn);
+        expect(c.notesMissed, 1);
+        expect(c.keyScores['C Major']!.correct, 7);
+        since = 100; // within graceMs of the tick that opened the count-in
+        c.pressKey(60); // the C that was due on beat 7
+        expect(c.notesMissed, 0, reason: 'rescued');
+        expect(c.notesClose, 1);
+        expect(c.streak, 1, reason: 'a rescue restarts the streak, as in-bar');
+        expect(
+          c.keyScores['C Major']!.correct,
+          8,
+          reason: 'credited to C, the key the miss was tallied under',
+        );
+        expect(c.keyScores['C Major']!.attempts, 8);
+        expect(c.keyScores.containsKey('G Major'), isFalse);
+        // The window is one beat wide: a second C after the next tick is
+        // just count-in noodling.
+        c.onBeat();
+        c.pressKey(60);
+        expect(c.notesClose, 1);
+        expect(c.notesJudged, 8);
+      },
+    );
+
+    test('a press early for the tick that starts the count-in is ignored', () {
+      var since = 0;
+      final c = makeController(
+        chords: false,
+        keyCountIn: true,
+        sinceBeat: () => since,
+      );
+      countIn(c);
+      for (var i = 0; i < 7; i++) {
+        c.pressKey(cNotes[i]);
+        c.releaseKey(cNotes[i]);
+        c.onBeat();
+      }
+      c.pressKey(cNotes[7]); // beat 7 on time
+      c.releaseKey(cNotes[7]);
+      since = 550; // early for the next tick — which is a count-in beat
+      c.pressKey(67); // anticipating G's root
+      expect(c.notesWrong, 0, reason: 'not wrong, just anticipation');
+      expect(c.notesJudged, 8, reason: 'not scored either');
+      c.onBeat(); // enter count-in
+      c.onBeat();
+      c.onBeat();
+      c.onBeat();
+      c.onBeat(); // G downbeat
+      expect(c.resultAt(0), isNull, reason: 'nothing pending from before');
+    });
+
+    test(
+      'session still auto-ends after 12 keys, with no trailing count-in',
+      () {
+        final c = makeController(chords: false, keyCountIn: true);
+        var ended = 0;
+        c.onSessionEnd = () => ended++;
+        countIn(c);
+        // Key 1 is 8 ticks; each later key is 4 count-in ticks + 8 run ticks.
+        for (var i = 0; i < 8 + 11 * 12; i++) {
+          c.onBeat();
+        }
+        expect(c.keysCompleted, 12);
+        expect(c.phase, RunPhase.idle);
+        expect(ended, 1);
+      },
+    );
+
+    test('reps > 1 only counts in on a key change, not between reps', () {
+      final c = makeController(chords: false, keyCountIn: true, repsPerKey: 2);
+      countIn(c);
+      for (var i = 0; i < 8; i++) {
+        c.onBeat();
+      }
+      expect(c.phase, RunPhase.running, reason: 'second rep of C, no count-in');
+      expect(c.keyPc, 0);
+      expect(c.repIndex, 2);
+      for (var i = 0; i < 8; i++) {
+        c.onBeat();
+      }
+      expect(c.phase, RunPhase.countingIn);
+      expect(c.isKeyTransition, isTrue);
+      expect(c.keyPc, 7);
     });
   });
 }

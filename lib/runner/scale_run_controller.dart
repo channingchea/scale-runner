@@ -91,6 +91,7 @@ class ScaleRunController extends ChangeNotifier {
     this.startKeyPc = 0,
     this.beatsPerBar = 4,
     int repsPerKey = 1,
+    this.keyCountInEnabled = true,
     this.onBeatMs = 70,
     this.closeMs = 150,
   })  : progression = progression ?? commonProgressions.first,
@@ -124,6 +125,11 @@ class ScaleRunController extends ChangeNotifier {
   /// How many full passes to play in each key before advancing. Floored to
   /// 1 in the constructor.
   final int repsPerKey;
+
+  /// Whether each key change is preceded by a one-bar count-in (the same
+  /// length as the opening one), so the player gets a heads-up and a bar to
+  /// re-set their hands. Off reproduces the instant rollover.
+  final bool keyCountInEnabled;
 
   /// A session is one full lap of this many distinct keys, regardless of
   /// [repsPerKey] (reps multiply passes per key, not the key count).
@@ -180,6 +186,14 @@ class ScaleRunController extends ChangeNotifier {
   int _beatIndex = 0;
   RunPhase _phase = RunPhase.idle;
   int _countInRemaining = 0;
+
+  /// Length in beats of the count-in currently running (opening or key
+  /// change). Same naming as InversionRunController.
+  int _countInTotal = 0;
+
+  /// True while the count-in is the session-opening one from [start];
+  /// false for a between-key count-in.
+  bool _openingCountIn = false;
 
   /// Passes completed on the current key (0-based); advances to the next key
   /// once this reaches [repsPerKey].
@@ -241,13 +255,20 @@ class ScaleRunController extends ChangeNotifier {
 
   /// Count-in beat number to display (1..beatsPerBar), 0 when not counting.
   int get countInBeat =>
-      _phase == RunPhase.countingIn ? beatsPerBar - _countInRemaining : 0;
+      _phase == RunPhase.countingIn ? _countInTotal - _countInRemaining : 0;
 
   /// Beats remaining before the downbeat (countdown for the numbers
   /// display): beatsPerBar down to 1, reaching 1 on the last count-in beat.
   /// 0 when not counting in.
   int get beatsUntilDownbeat =>
       _phase == RunPhase.countingIn ? _countInRemaining + 1 : 0;
+
+  /// True during the one-bar count-in that precedes a key change (as opposed
+  /// to the session-opening count-in). [keyLabel] and [currentStep] already
+  /// describe the upcoming key while this is true, so the screen can show
+  /// "Next: D Major" and preview its targets.
+  bool get isKeyTransition =>
+      _phase == RunPhase.countingIn && !_openingCountIn;
 
   int get keyPc => _keyPc;
   String get keyLabel => '${pitchClassNames[_keyPc]} Major';
@@ -335,7 +356,9 @@ class ScaleRunController extends ChangeNotifier {
   /// The screen starts the metronome alongside this call.
   void start() {
     _phase = RunPhase.countingIn;
+    _countInTotal = beatsPerBar;
     _countInRemaining = beatsPerBar;
+    _openingCountIn = true;
     _keyPc = startKeyPc; // every fresh start begins in the chosen key
     _rebuildSteps();
     _stepIndex = 0;
@@ -354,6 +377,7 @@ class ScaleRunController extends ChangeNotifier {
   void stop() {
     final wasActive = _phase != RunPhase.idle;
     _phase = RunPhase.idle;
+    _openingCountIn = false;
     _results.fillRange(0, 8, null);
     _pendingNext = null;
     _clearGrace();
@@ -383,12 +407,21 @@ class ScaleRunController extends ChangeNotifier {
       case RunPhase.idle:
         return;
       case RunPhase.countingIn:
+        // A key-change count-in's first beat was the tick that entered it
+        // (see _enterKeyCountIn), so only the opening count-in accents here.
+        // Every later count-in tick also closes the one-beat backward-grace
+        // window the previous key's last note may have left open.
+        if (!_openingCountIn) _clearGrace();
         if (_countInRemaining > 0) {
-          if (_countInRemaining == beatsPerBar) onBarStart?.call();
+          if (_openingCountIn && _countInRemaining == _countInTotal) {
+            onBarStart?.call();
+          }
           _countInRemaining--;
         } else {
-          // This tick is the downbeat: beat 0 of the first bar.
+          // This tick is the downbeat: beat 0 of the first bar of the
+          // session, or of the new key.
           _phase = RunPhase.running;
+          _openingCountIn = false;
           _applyPending();
           onBarStart?.call();
         }
@@ -456,10 +489,39 @@ class ScaleRunController extends ChangeNotifier {
           _keyPc = KeyCycler(increment).next(_keyPc);
           _rebuildSteps();
           _stepIndex = 0;
+          if (keyCountInEnabled) {
+            _enterKeyCountIn();
+            return;
+          }
         }
       }
     }
     _applyPending();
+  }
+
+  /// Begin the one-bar count-in that precedes the key just set in [_keyPc].
+  /// Called on the tick that closes the previous key's last bar, so that
+  /// tick *is* count-in beat 1 (already accented by the caller's beat-0
+  /// [onBarStart]); [_countInRemaining] therefore starts one short of
+  /// [beatsPerBar], mirroring JamModeController's bar-to-bar count-in.
+  ///
+  /// Nothing settles or judges while counting in: [_absBeat], the note
+  /// counters, streak and tallies all hold still, so scoring pauses for free.
+  /// No early hit can be pending here ([_expectedPcAt] reports nothing due on
+  /// this tick when the count-in is on), so clearing [_pendingNext] is only
+  /// defensive. The previous key's last-beat backward-grace stays armed for
+  /// this one beat (see [pressKey]).
+  ///
+  /// This is the single entry point for any key change mid-drill; a future
+  /// "skip key" control should set [_keyPc], rebuild, and call this.
+  void _enterKeyCountIn() {
+    _phase = RunPhase.countingIn;
+    _openingCountIn = false;
+    _countInTotal = beatsPerBar;
+    _countInRemaining = beatsPerBar - 1;
+    _stepIndex = 0;
+    _beatIndex = 0;
+    _pendingNext = null;
   }
 
   void _applyPending() {
@@ -497,8 +559,25 @@ class ScaleRunController extends ChangeNotifier {
     } else if (_phase == RunPhase.countingIn && _countInRemaining == 0) {
       // Last count-in window: an early press can still claim the downbeat.
       _judgeFirstDownbeatPress(midiNote);
+    } else if (isKeyTransition && _graceBeat != null) {
+      // First beat of a key-change count-in: the previous key's last note
+      // keeps its backward-grace second chance across the boundary.
+      _judgeGraceDuringCountIn(midiNote);
     }
     notifyListeners();
+  }
+
+  /// The count-in variant of the backward-grace rescue in [_judgePress]:
+  /// only the just-missed note, struck within [graceMs] of the tick that
+  /// started the count-in, counts. Anything else is count-in noodling.
+  void _judgeGraceDuringCountIn(int midiNote) {
+    final t = _judge.judgePress();
+    if (t.early || t.wrapped) return;
+    if (pitchClassOf(midiNote) != _graceExpectedPc) return;
+    if (!_judge.withinGrace(t.offBy)) return;
+    debug.add('GRACE(count-in) pc=${pitchClassOf(midiNote)} '
+        'off=${t.offBy} rescued beat=$_graceBeat');
+    _rescueGraceBeat(midiNote, t.offBy);
   }
 
   void releaseKey(int midiNote) {
@@ -542,6 +621,10 @@ class ScaleRunController extends ChangeNotifier {
       _rescueGraceBeat(midiNote, offBy);
       return;
     }
+
+    // Early for a tick that starts a key-change count-in: nothing is due
+    // there, so it's neither a hit nor a wrong note — just anticipation.
+    if (expectedPc == noExpectedNote) return;
 
     if (pc != expectedPc) {
       // Re-striking a held chord tone is never wrong; anything else is.
@@ -605,16 +688,24 @@ class ScaleRunController extends ChangeNotifier {
     }
     streak++;
     if (streak > bestStreak) bestStreak = streak;
-    keyScores[keyLabel]?.correct += 1;
-    modeScores[_currentModeName]?.correct += 1;
+    // Credit the tallies the miss was recorded against, not the current
+    // ones: the bar (and, across a key change, the key) may have moved on.
+    keyScores[_graceKeyLabel]?.correct += 1;
+    modeScores[_graceModeName]?.correct += 1;
     _flash(_correctFlash, midiNote);
     _clearGrace();
   }
+
+  /// Key / mode the grace beat's miss was tallied under (see [_tally]).
+  String? _graceKeyLabel;
+  String? _graceModeName;
 
   void _armGrace(int beat) {
     _graceBeat = beat;
     _graceAbsBeat = _absBeat;
     _graceExpectedPc = _expectedPcAt(beat);
+    _graceKeyLabel = keyLabel;
+    _graceModeName = _currentModeName;
     _graceBarRolled = false;
   }
 
@@ -622,6 +713,8 @@ class ScaleRunController extends ChangeNotifier {
     _graceBeat = null;
     _graceAbsBeat = null;
     _graceExpectedPc = null;
+    _graceKeyLabel = null;
+    _graceModeName = null;
     _graceBarRolled = false;
   }
 
@@ -649,9 +742,12 @@ class ScaleRunController extends ChangeNotifier {
     _pendingNext = result;
   }
 
+  /// Sentinel from [_expectedPcAt]: no run note is due on that beat.
+  static const int noExpectedNote = -1;
+
   /// Expected run pitch class at [beat], looking across the bar line (beat 8 =
   /// beat 0 of the next step, possibly the next pass of this key or the next
-  /// key entirely).
+  /// key entirely), or [noExpectedNote] when the next tick starts a count-in.
   int _expectedPcAt(int beat) {
     if (beat <= 7) return currentStep.runPcs[beat];
     final nextIndex = _stepIndex + 1;
@@ -659,6 +755,9 @@ class ScaleRunController extends ChangeNotifier {
     // Past the end of this pass. If another rep of the same key is coming,
     // the next note is this key's first step again, not the next key's.
     if (_keyRepsDone + 1 < repsPerKey) return _steps[0].runPcs[0];
+    // A key change is next. With the between-key count-in on, the following
+    // tick is count-in beat 1, not a note — there is nothing to be early for.
+    if (keyCountInEnabled) return noExpectedNote;
     final nextKey = KeyCycler(increment).next(_keyPc);
     final harmony = DiatonicHarmony(nextKey, sevenths: sevenths);
     final next = chordsEnabled

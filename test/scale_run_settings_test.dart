@@ -34,4 +34,22 @@ void main() {
       expect(await settings.voicingShowDots(), isTrue);
     });
   });
+
+  group('Scale Running between-key count-in', () {
+    test('defaults on', () async {
+      expect(await settings.runKeyCountIn(), isTrue);
+    });
+
+    test('round-trips off and back on', () async {
+      await settings.setRunKeyCountIn(false);
+      expect(await settings.runKeyCountIn(), isFalse);
+      await settings.setRunKeyCountIn(true);
+      expect(await settings.runKeyCountIn(), isTrue);
+    });
+
+    test('does not disturb the target dots pref', () async {
+      await settings.setRunKeyCountIn(false);
+      expect(await settings.runShowDots(), isTrue);
+    });
+  });
 }

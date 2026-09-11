@@ -91,6 +91,7 @@ class QuizSettings {
   static const _runStartKeyKey = 'run_start_key';
   static const _runRepsKey = 'run_reps';
   static const _runShowDotsKey = 'run_show_dots';
+  static const _runKeyCountInKey = 'run_key_count_in';
 
   // Inversion Running drill.
   static const _invChordsKey = 'inv_chords';
@@ -410,6 +411,16 @@ class QuizSettings {
 
   Future<void> setRunShowDots(bool on) async {
     await _prefs.setBool(_runShowDotsKey, on);
+  }
+
+  /// Whether Scale Running counts in one bar before each new key (giving a
+  /// heads-up and time to re-set the hands). Default on; off rolls straight
+  /// into the next key on the following beat.
+  Future<bool> runKeyCountIn() async =>
+      await _prefs.getBool(_runKeyCountInKey) ?? true;
+
+  Future<void> setRunKeyCountIn(bool on) async {
+    await _prefs.setBool(_runKeyCountInKey, on);
   }
 
   /// The enabled [ScaleFormula]s (preserving library order). Falls back to the

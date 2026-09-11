@@ -126,6 +126,7 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
       sevenths: await settings.runSevenths(),
       startKeyPc: await settings.runStartKeyPc(),
       repsPerKey: await settings.runRepsPerKey(),
+      keyCountInEnabled: await settings.runKeyCountIn(),
       onBeatMs: difficulty.onBeatMs,
       closeMs: difficulty.closeMs,
     );
@@ -348,16 +349,30 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     // them side by side so the short viewport isn't asked to fit the full
     // vertical stack.
     final info = <Widget>[
-      Text(
-        c.chordsEnabled
-            ? 'Hold the chord, run the mode: one note per beat'
-            : 'Run the scale: one note per beat',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: compact ? 12 : 14,
+      // During a key change the whole prompt block previews what's coming,
+      // so the instruction line gives way to a NEXT UP eyebrow.
+      if (c.isKeyTransition)
+        Text(
+          'NEXT UP',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.accent2,
+            fontSize: compact ? 12 : 13,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2,
+          ),
+        )
+      else
+        Text(
+          c.chordsEnabled
+              ? 'Hold the chord, run the mode: one note per beat'
+              : 'Run the scale: one note per beat',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: compact ? 12 : 14,
+          ),
         ),
-      ),
       SizedBox(height: compact ? 6 : 12),
       FittedBox(
         fit: BoxFit.scaleDown,
@@ -412,12 +427,23 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
       ],
     ];
     final status = <Widget>[
-      _buildBeatDots(c),
-      SizedBox(height: compact ? 10 : 14),
-      if (c.chordsEnabled) ...[
-        _buildChordIndicator(c),
-        SizedBox(height: compact ? 10 : 14),
-      ],
+      // The dots and chord pill describe the bar in progress; while a key
+      // change counts in there isn't one yet, so they fade back.
+      AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: c.isKeyTransition ? 0.35 : 1,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildBeatDots(c),
+            SizedBox(height: compact ? 10 : 14),
+            if (c.chordsEnabled) ...[
+              _buildChordIndicator(c),
+              SizedBox(height: compact ? 10 : 14),
+            ],
+          ],
+        ),
+      ),
       _buildRunControl(c, compact),
     ];
     final child = compact
