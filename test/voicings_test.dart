@@ -479,4 +479,35 @@ void main() {
       );
     });
   });
+
+  group('repairPositions', () {
+    test('an ascending list is untouched', () {
+      expect(repairPositions([0, 1, 2.5, 7]), [0, 1, 2.5, 7]);
+    });
+
+    test('a record moved to the front is the only one that changes', () {
+      expect(repairPositions([3, 0, 1, 2]), [-1, 0, 1, 2]);
+    });
+
+    test('a record moved between two others splits the gap', () {
+      final out = repairPositions([0, 3, 1, 2]);
+      expect(out, [0, 0.5, 1, 2]);
+    });
+
+    test('a run of movers is spaced evenly', () {
+      final out = repairPositions([0, 5, 6, 1]);
+      expect(out.sublist(0, 3), [0, 5, 6]);
+      expect(out[3], 7);
+    });
+
+    test('renumbers everything when the gap is too small to split', () {
+      final out = repairPositions([0, 1e-7, 5e-8, 1.5e-7]);
+      expect(out, [0, 1, 2, 3]);
+    });
+
+    test('empty and singleton lists', () {
+      expect(repairPositions([]), isEmpty);
+      expect(repairPositions([4]), [4]);
+    });
+  });
 }

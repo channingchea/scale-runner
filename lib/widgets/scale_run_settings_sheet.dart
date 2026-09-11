@@ -300,8 +300,9 @@ class _ScaleRunSettingsSheetState extends State<ScaleRunSettingsSheet> {
         title: const Text('Reset stats?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'This clears your accumulated per-key and per-mode accuracy. '
-          'It can\'t be undone.',
+          'This clears the per-key and per-mode accuracy recorded on this '
+          'device. Practice synced from other devices stays. It can\'t be '
+          'undone.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [

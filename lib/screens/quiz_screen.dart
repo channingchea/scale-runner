@@ -186,7 +186,7 @@ class _QuizScreenState extends State<QuizScreen> {
         }
         _carryScore = next.score;
         _carryBestStreak = next.bestStreak;
-        settings.setQuizStats(widget.mode, next.score, next.bestStreak);
+        settings.recordQuizWin(widget.mode, next.bestStreak);
         // Quiz has no discrete session end; the first win of the day keeps
         // the daily practice streak alive (recordPractice is a no-op after).
         StreakService.instance.recordPractice().then((update) async {
@@ -237,7 +237,7 @@ class _QuizScreenState extends State<QuizScreen> {
     _carryScore = 0;
     _carryBestStreak = 0;
     _controller?.resetStats();
-    _settings?.setQuizStats(widget.mode, 0, 0);
+    _settings?.resetQuizStats(widget.mode);
   }
 
   @override

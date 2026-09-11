@@ -207,7 +207,6 @@ class _JamModeScreenState extends State<JamModeScreen> {
       await settings.mergeJamStats(c.qualitySnapshot, c.degreeSnapshot);
       unawaited(
           SocialService.instance.recordWeeklySessionFrom(c.qualitySnapshot));
-      unawaited(SocialService.instance.recordModeScores());
     }
     final streakUpdate = await StreakService.instance.recordPractice();
     if (mounted) {

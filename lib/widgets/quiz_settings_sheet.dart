@@ -641,8 +641,8 @@ class _QuizSettingsSheetState extends State<QuizSettingsSheet> {
         title: const Text('Reset stats?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
-          'Your ${_isScale ? "scale" : "chord"} score and best streak will '
-          'go back to zero. This can\'t be undone.',
+          'Your ${_isScale ? "scale" : "chord"} score and best streak on '
+          'this device will go back to zero. This can\'t be undone.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [

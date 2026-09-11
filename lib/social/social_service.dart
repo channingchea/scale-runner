@@ -3,15 +3,20 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
+import '../purchases/purchase_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../streak/streak_service.dart';
+import '../sync/mock_sync_backend.dart';
+import '../sync/sync_backend.dart';
+import '../sync/sync_service.dart';
 import 'mock_social_backend.dart';
 import 'social_backend.dart';
 import 'social_config.dart';
 import 'social_models.dart';
 
-/// Everything social: optional sign-in, streak sync, friends, applause,
-/// leaderboard data. Mirrors the app's service pattern (eager singleton,
+/// Everything social: optional sign-in, friends, applause, leaderboard data,
+/// and the friends-facing totals (streak, this week, per-mode scores), which
+/// SyncService asks it to refresh after every pull so they sum every device. Mirrors the app's service pattern (eager singleton,
 /// ChangeNotifier, never-throwing init, injectable deps for tests).
 ///
 /// The app is fully usable signed out — every method here degrades to a
@@ -21,11 +26,17 @@ class SocialService extends ChangeNotifier {
     this._backend,
     QuizSettings? settings,
     this._streakSource,
-  }) : _injectedSettings = settings;
+    SyncService? sync,
+    PurchaseService? purchases,
+  })  : _injectedSettings = settings,
+        _sync = sync ?? SyncService.instance,
+        _purchases = purchases ?? PurchaseService.instance;
 
   static final SocialService instance = SocialService();
 
   SocialBackend? _backend;
+  final SyncService _sync;
+  final PurchaseService _purchases;
   final QuizSettings? _injectedSettings;
   final ({int current, int best, int total}) Function()? _streakSource;
 
@@ -91,17 +102,21 @@ class SocialService extends ChangeNotifier {
       if (_backend == null) {
         if (kMockSocialData) {
           _backend = MockSocialBackend();
+          _sync.attach(MockSyncBackend(MockSyncServer()));
         } else {
           await Supabase.initialize(
               url: supabaseUrl, publishableKey: supabasePublishableKey);
           _backend = SupabaseSocialBackend(Supabase.instance.client);
+          _sync.attach(SupabaseSyncBackend(Supabase.instance.client));
         }
       }
+      _sync.onAggregates = _pushAggregates;
       final seen = await (await _settings).socialActivitySeenAt();
       if (seen != null) _activitySeenAt = DateTime.tryParse(seen)?.toLocal();
       if (isSignedIn) {
+        unawaited(_sync.sync());
+        unawaited(_purchases.linkAccount(_backend!.userId));
         _profile = await _backend!.myProfile();
-        await _flushPendingStreak();
         await refresh();
       }
     } catch (e) {
@@ -126,9 +141,6 @@ class SocialService extends ChangeNotifier {
         ..sort((a, b) => b.currentStreak.compareTo(a.currentStreak));
       _applause = results[1] as List<ApplauseReceived>;
       _applaudedToday = results[2] as Set<String>;
-      await _flushPendingStreak();
-      await _flushWeekly();
-      await _flushModeStats();
     } catch (e) {
       debugPrint('SocialService refresh failed: $e');
     }
@@ -159,9 +171,9 @@ class SocialService extends ChangeNotifier {
       case AuthSuccess(:final suggestedName):
         try {
           await _ensureProfile(suggestedName);
-          await _flushPendingStreak();
-          unawaited(syncStreak());
           unawaited(refresh());
+          unawaited(_sync.onSignedIn());
+          unawaited(_purchases.linkAccount(backend.userId));
         } catch (e) {
           debugPrint('post-sign-in setup failed: $e');
         }
@@ -223,13 +235,18 @@ class SocialService extends ChangeNotifier {
     } catch (e) {
       debugPrint('sign-out failed: $e');
     }
+    await _sync.onSignedOut();
+    unawaited(_purchases.linkAccount(null));
     _clearLocal();
   }
 
-  /// Deletes the account server-side. Returns true on success.
+  /// Deletes the account server-side. Returns true on success. The device
+  /// keeps its local copy of everything; only the server rows go.
   Future<bool> deleteAccount() async {
     try {
       await _backend?.deleteAccount();
+      await _sync.onSignedOut();
+      unawaited(_purchases.linkAccount(null));
       _clearLocal();
       return true;
     } catch (e) {
@@ -246,54 +263,30 @@ class SocialService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Streak sync ----
+  // ---- Friends-facing totals ----
 
-  /// Fire-and-forget push of the local streak. Called from the practice
-  /// hook; when offline the payload is queued and retried on init/refresh.
-  Future<void> syncStreak() async {
+  /// Called by SyncService after every pull. Friends read three rows about
+  /// us (streak, this week, per-mode scores); each becomes the merged total
+  /// over every device, so practicing on the iPad shows up for friends the
+  /// same as practicing on the phone. Signed out this is a no-op and the
+  /// local aggregates simply wait for the next sign-in.
+  Future<void> _pushAggregates() async {
     final backend = _backend;
     if (backend == null || !isSignedIn) return;
+    final settings = await _settings;
     final s = _readStreak();
-    final settings = await _settings;
-    await settings
-        .setSocialPendingStreak('${s.current}|${s.best}|${s.total}');
-    try {
-      await backend.upsertStreak(s.current, s.best, s.total);
-      await settings.setSocialPendingStreak(null);
-    } catch (e) {
-      debugPrint('streak sync queued (offline?): $e');
-    }
-  }
-
-  Future<void> _flushPendingStreak() async {
-    final backend = _backend;
-    if (backend == null || !isSignedIn) return;
-    final settings = await _settings;
-    final pending = await settings.socialPendingStreak();
-    if (pending == null) return;
-    final parts = pending.split('|');
-    if (parts.length != 3) {
-      await settings.setSocialPendingStreak(null);
-      return;
-    }
-    try {
-      await backend.upsertStreak(
-        int.tryParse(parts[0]) ?? 0,
-        int.tryParse(parts[1]) ?? 0,
-        int.tryParse(parts[2]) ?? 0,
-      );
-      await settings.setSocialPendingStreak(null);
-    } catch (_) {
-      // still offline — keep it queued
-    }
+    await backend.upsertStreak(s.current, s.best, s.total);
+    final week = await settings.mergedWeeklyCurrent();
+    if (week != null) await backend.upsertWeeklyStats(week);
+    await backend.upsertModeStats(await settings.modeStats());
   }
 
   // ---- Weekly stats ----
 
   /// Record one finished practice-mode session (Scale Running / Jam /
-  /// Inversion) into this week's local aggregate and push it. Quizzes are
-  /// intentionally excluded. Accumulates locally even when signed out and
-  /// syncs on the next sign-in. Fire-and-forget; never throws.
+  /// Inversion) into this week's local aggregate. Quizzes are intentionally
+  /// excluded. The write itself wakes SyncService, which uploads this
+  /// device's week and refreshes the friends-facing row. Never throws.
   Future<void> recordWeeklySession(int attempts, int correct) async {
     final settings = await _settings;
     final now = DateTime.now();
@@ -303,8 +296,6 @@ class SocialService extends ChangeNotifier {
     }
     agg = agg.withSession(now, attempts, correct);
     await settings.setSocialWeeklyCurrent(agg.encode());
-    await settings.setSocialWeeklyDirty(true);
-    await _pushWeekly(agg, settings);
   }
 
   /// Sums a session's `key → (attempts, correct)` snapshot and records it.
@@ -315,30 +306,6 @@ class SocialService extends ChangeNotifier {
       c += v.$2;
     }
     return recordWeeklySession(a, c);
-  }
-
-  Future<void> _pushWeekly(WeeklyStat agg, QuizSettings settings) async {
-    final backend = _backend;
-    if (backend == null || !isSignedIn) return; // stays dirty; flush later
-    try {
-      await backend.upsertWeeklyStats(agg);
-      await settings.setSocialWeeklyDirty(false);
-    } catch (e) {
-      debugPrint('weekly sync queued (offline?): $e');
-    }
-  }
-
-  Future<void> _flushWeekly() async {
-    final backend = _backend;
-    if (backend == null || !isSignedIn) return;
-    final settings = await _settings;
-    if (!await settings.socialWeeklyDirty()) return;
-    final agg = WeeklyStat.decode(await settings.socialWeeklyCurrent());
-    if (agg == null) {
-      await settings.setSocialWeeklyDirty(false);
-      return;
-    }
-    await _pushWeekly(agg, settings);
   }
 
   /// A friend's recent weekly aggregates for the profile screen (newest first).
@@ -366,36 +333,6 @@ class SocialService extends ChangeNotifier {
   }
 
   // ---- Mode overview scores ----
-
-  /// Recompute the lifetime per-mode totals from local settings and push them,
-  /// so friends see up-to-date overview scores. Call from a practice
-  /// session-end hook (after the mode's lifetime aggregates are merged).
-  /// Accumulates locally when signed out and syncs on the next sign-in.
-  /// Fire-and-forget; never throws.
-  Future<void> recordModeScores() async {
-    final settings = await _settings;
-    await settings.setSocialModeStatsDirty(true);
-    await _pushModeStats(settings);
-  }
-
-  Future<void> _pushModeStats(QuizSettings settings) async {
-    final backend = _backend;
-    if (backend == null || !isSignedIn) return; // stays dirty; flush later
-    try {
-      await backend.upsertModeStats(await settings.modeStats());
-      await settings.setSocialModeStatsDirty(false);
-    } catch (e) {
-      debugPrint('mode-stats sync queued (offline?): $e');
-    }
-  }
-
-  Future<void> _flushModeStats() async {
-    final backend = _backend;
-    if (backend == null || !isSignedIn) return;
-    final settings = await _settings;
-    if (!await settings.socialModeStatsDirty()) return;
-    await _pushModeStats(settings);
-  }
 
   /// A user's per-mode totals for the profile screen, or null if none yet.
   Future<ModeStats?> modeStatsFor(String userId) async {

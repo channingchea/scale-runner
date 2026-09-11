@@ -5,6 +5,7 @@ import '../midi/midi_service.dart';
 import '../onboarding/mode_guides.dart';
 import '../purchases/paywall_sheet.dart';
 import '../purchases/purchase_service.dart';
+import '../sync/sync_service.dart';
 import '../quiz/quiz_settings.dart';
 import '../theme/app_theme.dart';
 import '../theory/voicings.dart';
@@ -39,6 +40,7 @@ class VoicingsScreen extends StatefulWidget {
 
 class _VoicingsScreenState extends State<VoicingsScreen> {
   final PurchaseService _purchases = PurchaseService.instance;
+  final SyncService _sync = SyncService.instance;
   final TextEditingController _search = TextEditingController();
 
   QuizSettings? _settings;
@@ -64,6 +66,7 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
   void initState() {
     super.initState();
     _purchases.addListener(_onPurchasesChanged);
+    _sync.addListener(_onSync);
     _search.addListener(() {
       final q = _search.text.trim();
       if (q != _query) setState(() => _query = q);
@@ -77,12 +80,18 @@ class _VoicingsScreenState extends State<VoicingsScreen> {
   @override
   void dispose() {
     _purchases.removeListener(_onPurchasesChanged);
+    _sync.removeListener(_onSync);
     _search.dispose();
     super.dispose();
   }
 
   void _onPurchasesChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// Another device changed the library: show it.
+  void _onSync() {
+    if (_sync.libraryChanged) _load();
   }
 
   Future<void> _load() async {

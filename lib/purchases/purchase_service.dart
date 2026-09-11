@@ -68,6 +68,24 @@ class PurchaseService extends ChangeNotifier {
     }
   }
 
+  /// Tie the RevenueCat customer to the signed-in account (or, with null,
+  /// back to an anonymous one on sign-out), so a Pro unlock bought on one
+  /// device is active on every device signed in as that user without a
+  /// manual restore. Never throws; a failure just means restore still works.
+  Future<void> linkAccount(String? userId) async {
+    if (!_configured) return;
+    try {
+      if (userId != null) {
+        final result = await Purchases.logIn(userId);
+        _onCustomerInfo(result.customerInfo);
+      } else {
+        _onCustomerInfo(await Purchases.logOut());
+      }
+    } catch (e) {
+      debugPrint('PurchaseService.linkAccount failed: $e');
+    }
+  }
+
   void _onCustomerInfo(CustomerInfo info) {
     final active = info.entitlements.active.containsKey(proEntitlementId);
     if (active != _isPro) {

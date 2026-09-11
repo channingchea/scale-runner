@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -270,6 +271,96 @@ void main() {
       expect(plusVoicings.accuracy, scored.accuracy);
       expect(plusVoicings.attempts, scored.attempts);
       expect(plusVoicings.sessions, 2); // the practice still counts
+    });
+  });
+
+  group('sync-ready records', () {
+    test('a line saved before sync reads updatedAt = createdAt, pos = index',
+        () async {
+      // Two legacy lines: no `up`, no `pos`.
+      await settings.upsertVoicing(spec('a', 'A', [0, 4, 7]));
+      final prefs = SharedPreferencesAsync();
+      await prefs.setStringList('voicing_customs', [
+        '{"id":"a","name":"A","root":0,"offsets":[0,4,7],"at":1000}',
+        '{"id":"b","name":"B","root":0,"offsets":[0,3,7],"at":2000}',
+      ]);
+      final saved = await settings.savedVoicings();
+      expect(saved.map((v) => v.position), [0.0, 1.0]);
+      expect(saved[0].updatedAt, saved[0].createdAt);
+      expect(saved[1].updatedAt, DateTime.fromMicrosecondsSinceEpoch(2000));
+    });
+
+    test('upsert stamps updatedAt and appends after the last position',
+        () async {
+      final before = DateTime.now();
+      await settings.upsertVoicing(spec('a', 'A', [0, 4, 7]));
+      await settings.upsertVoicing(spec('b', 'B', [0, 3, 7]));
+      final saved = await settings.savedVoicings();
+      expect(saved[0].updatedAt.isBefore(before), isFalse);
+      expect(saved[1].position, greaterThan(saved[0].position));
+
+      // An edit keeps its position and bumps updatedAt.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await settings.upsertVoicing(saved[0].copyWith(name: 'A2'));
+      final again = await settings.savedVoicings();
+      expect(again[0].position, saved[0].position);
+      expect(again[0].updatedAt.isAfter(saved[0].updatedAt), isTrue);
+    });
+
+    test('reorder keeps positions ascending and only touches movers',
+        () async {
+      for (final id in ['a', 'b', 'c', 'd']) {
+        await settings.upsertVoicing(spec(id, id, [0, 4, 7]));
+      }
+      final saved = await settings.savedVoicings(); // a b c d
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      // Move d to the front.
+      await settings.reorderVoicings([saved[3], ...saved.take(3)]);
+      final after = await settings.savedVoicings();
+      expect(after.map((v) => v.id), ['d', 'a', 'b', 'c']);
+      for (var i = 1; i < after.length; i++) {
+        expect(after[i].position, greaterThan(after[i - 1].position));
+      }
+      final movedD = after[0];
+      expect(movedD.updatedAt.isAfter(saved[3].updatedAt), isTrue);
+      // a, b, c kept their positions and timestamps.
+      for (var i = 0; i < 3; i++) {
+        expect(after[i + 1].position, saved[i].position);
+        expect(after[i + 1].updatedAt, saved[i].updatedAt);
+      }
+    });
+
+    test('deletes leave a tombstone until pruned', () async {
+      await settings.upsertVoicing(spec('a', 'A', [0, 4, 7]));
+      await settings.upsertVoicingFolder(VoicingFolder.create('Blues'));
+      final folder = (await settings.voicingFolders()).single;
+      await settings.deleteVoicing('a');
+      await settings.deleteVoicingFolder(folder.id);
+      final gone = await settings.deletedRecords();
+      expect(gone.map((d) => (d.id, d.kind)),
+          [('a', 'voicing'), (folder.id, 'folder')]);
+      await settings.pruneDeletedRecords(['a']);
+      expect((await settings.deletedRecords()).map((d) => d.id), [folder.id]);
+    });
+
+    test('labels get positions and updatedAt too', () async {
+      await settings.upsertVoicingTag(VoicingTag.create('x', prefix: 't'));
+      await settings.upsertVoicingTag(VoicingTag.create('y', prefix: 't'));
+      final tags = await settings.voicingTags();
+      expect(tags[1].position, greaterThan(tags[0].position));
+      expect(tags[0].updatedAt.year, greaterThan(2000));
+      // Legacy label line: no up/pos.
+      await SharedPreferencesAsync()
+          .setStringList('voicing_folders', ['{"id":"f1","name":"Old"}']);
+      final old = (await settings.voicingFolders()).single;
+      expect(old.position, 0);
+      expect(old.updatedAt.microsecondsSinceEpoch, 0);
+    });
+
+    test('deviceId is minted once and then stable', () async {
+      final a = await settings.deviceId();
+      expect(a, hasLength(32));
+      expect(await settings.deviceId(), a);
     });
   });
 }

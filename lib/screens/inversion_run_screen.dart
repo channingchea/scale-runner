@@ -208,7 +208,6 @@ class _InversionRunScreenState extends State<InversionRunScreen> {
       await settings.mergeInversionStats(c.chordSnapshot);
       unawaited(
           SocialService.instance.recordWeeklySessionFrom(c.chordSnapshot));
-      unawaited(SocialService.instance.recordModeScores());
     }
     final streakUpdate = await StreakService.instance.recordPractice();
     if (mounted) {

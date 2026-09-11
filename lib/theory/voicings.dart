@@ -96,6 +96,15 @@ class VoicingSpec {
 
   final DateTime createdAt;
 
+  /// When this record last changed on any device. Cross-device merge keeps
+  /// the newer copy. Defaults to [createdAt] for records saved before sync.
+  final DateTime updatedAt;
+
+  /// Sort key within the library. Fractional so a move assigns a midpoint
+  /// between its new neighbours instead of renumbering the whole list; see
+  /// [repairPositions]. Records saved before sync take their list index.
+  final double position;
+
   /// Folder this voicing is filed under, or null for Ungrouped. A voicing is
   /// in at most one folder.
   final String? folderId;
@@ -113,10 +122,12 @@ class VoicingSpec {
     required this.rootPc,
     required this.offsets,
     required this.createdAt,
+    DateTime? updatedAt,
+    this.position = 0,
     this.folderId,
     this.colorTag,
     this.tagIds = const [],
-  });
+  }) : updatedAt = updatedAt ?? createdAt;
 
   /// A new spec, stamping [createdAt] and deriving an [id] from it.
   factory VoicingSpec.create({
@@ -226,6 +237,8 @@ class VoicingSpec {
     int? colorTag,
     bool clearColor = false,
     List<String>? tagIds,
+    DateTime? updatedAt,
+    double? position,
   }) =>
       VoicingSpec(
         id: id,
@@ -233,6 +246,8 @@ class VoicingSpec {
         rootPc: rootPc ?? this.rootPc,
         offsets: offsets ?? this.offsets,
         createdAt: createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+        position: position ?? this.position,
         folderId: clearFolder ? null : (folderId ?? this.folderId),
         colorTag: clearColor ? null : (colorTag ?? this.colorTag),
         tagIds: tagIds ?? this.tagIds,
@@ -246,14 +261,18 @@ class VoicingSpec {
         'root': rootPc,
         'offsets': offsets,
         'at': createdAt.microsecondsSinceEpoch,
+        'up': updatedAt.microsecondsSinceEpoch,
+        'pos': position,
         if (folderId != null) 'folder': folderId,
         if (colorTag != null) 'color': colorTag,
         if (tagIds.isNotEmpty) 'tags': tagIds,
       });
 
   /// Inverse of [encode]. Returns null on anything malformed so one bad line
-  /// can't take the whole collection down.
-  static VoicingSpec? decode(String line) {
+  /// can't take the whole collection down. A line written before sync has no
+  /// `up` or `pos`; it reads as updated when created, at [fallbackPosition]
+  /// (its index in the stored list, so the old order is kept).
+  static VoicingSpec? decode(String line, {double fallbackPosition = 0}) {
     try {
       final m = jsonDecode(line);
       if (m is! Map) return null;
@@ -268,6 +287,8 @@ class VoicingSpec {
         rootPc: root % 12,
         offsets: offsets,
         createdAt: DateTime.fromMicrosecondsSinceEpoch(at),
+        updatedAt: DateTime.fromMicrosecondsSinceEpoch(m['up'] as int? ?? at),
+        position: (m['pos'] as num?)?.toDouble() ?? fallbackPosition,
         folderId: m['folder'] as String?,
         colorTag: m['color'] as int?,
         tagIds: [
@@ -294,25 +315,139 @@ class VoicingLabel {
   final String id;
   final String name;
 
-  const VoicingLabel(this.id, this.name);
+  /// Same meaning as on [VoicingSpec]. A label saved before sync reads as
+  /// updated at the epoch, so any synced copy of it wins the first merge.
+  DateTime get updatedAt =>
+      _updatedAt ?? DateTime.fromMicrosecondsSinceEpoch(0);
+  final DateTime? _updatedAt;
+  final double position;
+
+  const VoicingLabel(this.id, this.name,
+      {DateTime? updatedAt, this.position = 0})
+      : _updatedAt = updatedAt; // ignore: prefer_initializing_formals
 
   /// A new record with an id derived from the clock. [prefix] keeps folder and
   /// tag ids visually distinct in stored JSON ('f' / 't').
-  factory VoicingLabel.create(String name, {String prefix = 'f'}) =>
-      VoicingLabel('$prefix${DateTime.now().microsecondsSinceEpoch}', name);
+  factory VoicingLabel.create(String name, {String prefix = 'f'}) {
+    final now = DateTime.now();
+    return VoicingLabel('$prefix${now.microsecondsSinceEpoch}', name,
+        updatedAt: now);
+  }
 
-  VoicingLabel renamed(String newName) => VoicingLabel(id, newName);
+  VoicingLabel renamed(String newName) =>
+      VoicingLabel(id, newName, updatedAt: updatedAt, position: position);
 
-  String encode() => jsonEncode({'id': id, 'name': name});
+  VoicingLabel copyWith({DateTime? updatedAt, double? position}) =>
+      VoicingLabel(id, name,
+          updatedAt: updatedAt ?? this.updatedAt,
+          position: position ?? this.position);
+
+  String encode() => jsonEncode({
+        'id': id,
+        'name': name,
+        'up': updatedAt.microsecondsSinceEpoch,
+        'pos': position,
+      });
 
   /// Null on anything malformed, so one bad line can't take the list down.
-  static VoicingLabel? decode(String line) {
+  /// See [VoicingSpec.decode] for [fallbackPosition].
+  static VoicingLabel? decode(String line, {double fallbackPosition = 0}) {
     try {
       final m = jsonDecode(line);
       if (m is! Map) return null;
       final id = m['id'] as String;
       if (id.isEmpty) return null;
-      return VoicingLabel(id, m['name'] as String);
+      return VoicingLabel(
+        id,
+        m['name'] as String,
+        updatedAt: DateTime.fromMicrosecondsSinceEpoch(m['up'] as int? ?? 0),
+        position: (m['pos'] as num?)?.toDouble() ?? fallbackPosition,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// New sort keys for a list the user has just reordered, changing as few as
+/// possible. The longest run of records already in ascending order keeps its
+/// positions; everything else gets evenly spaced midpoints between its kept
+/// neighbours. When a gap is too small to split, the whole list is renumbered
+/// 0, 1, 2, ...
+///
+/// Positions that survive unchanged don't need a new `updatedAt`, so a reorder
+/// on one device only touches the records that actually moved.
+List<double> repairPositions(List<double> ordered) {
+  final n = ordered.length;
+  if (n == 0) return const [];
+  // Longest strictly increasing subsequence, by index.
+  final tails = <int>[];
+  final prev = List<int>.filled(n, -1);
+  for (var i = 0; i < n; i++) {
+    var lo = 0, hi = tails.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (ordered[tails[mid]] < ordered[i]) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo > 0) prev[i] = tails[lo - 1];
+    if (lo == tails.length) {
+      tails.add(i);
+    } else {
+      tails[lo] = i;
+    }
+  }
+  final keep = List<bool>.filled(n, false);
+  for (var i = tails.last; i >= 0; i = prev[i]) {
+    keep[i] = true;
+  }
+  final out = List<double>.from(ordered);
+  var i = 0;
+  while (i < n) {
+    if (keep[i]) {
+      i++;
+      continue;
+    }
+    var j = i;
+    while (j < n && !keep[j]) {
+      j++;
+    }
+    final count = j - i;
+    final lower = i > 0 ? out[i - 1] : (j < n ? out[j] - count - 1 : -1.0);
+    final upper = j < n ? out[j] : lower + count + 1;
+    final step = (upper - lower) / (count + 1);
+    if (step < 1e-6) {
+      return [for (var k = 0; k < n; k++) k.toDouble()];
+    }
+    for (var k = 0; k < count; k++) {
+      out[i + k] = lower + step * (k + 1);
+    }
+    i = j;
+  }
+  return out;
+}
+
+/// A delete waiting to be synced: which record, what kind ('voicing',
+/// 'folder' or 'tag'), and when. Kept until the server has it.
+class DeletedRecord {
+  final String id;
+  final String kind;
+  final DateTime deletedAt;
+
+  const DeletedRecord(this.id, this.kind, this.deletedAt);
+
+  String encode() => jsonEncode(
+      {'id': id, 'kind': kind, 'at': deletedAt.microsecondsSinceEpoch});
+
+  static DeletedRecord? decode(String line) {
+    try {
+      final m = jsonDecode(line);
+      if (m is! Map) return null;
+      return DeletedRecord(m['id'] as String, m['kind'] as String,
+          DateTime.fromMicrosecondsSinceEpoch(m['at'] as int));
     } catch (_) {
       return null;
     }

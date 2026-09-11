@@ -7,6 +7,9 @@ import 'package:scale_runner/social/social_backend.dart';
 import 'package:scale_runner/social/social_config.dart';
 import 'package:scale_runner/social/social_models.dart';
 import 'package:scale_runner/social/social_service.dart';
+import 'package:scale_runner/sync/mock_sync_backend.dart';
+import 'package:scale_runner/sync/sync_backend.dart';
+import 'package:scale_runner/sync/sync_service.dart';
 
 /// In-memory backend (house style: hand-rolled fakes + injection).
 class FakeBackend implements SocialBackend {
@@ -283,38 +286,63 @@ void main() {
     });
   });
 
-  group('streak sync', () {
-    test('pushes the local streak after practice', () async {
-      final s = fresh();
+  group('friends-facing totals', () {
+    late SyncService sync;
+    late MockSyncBackend syncBackend;
+
+    setUp(() {
+      syncBackend = MockSyncBackend(MockSyncServer());
+      sync = SyncService(backend: syncBackend, retryDelays: []);
+      QuizSettings.onSyncedDataChanged = null; // tests drive sync directly
+    });
+
+    SocialService withSync() => SocialService(
+          backend: backend,
+          settings: settings,
+          streakSource: () => localStreak,
+          sync: sync,
+        );
+
+    test('a sync pushes streak, this week and mode scores', () async {
+      final s = withSync();
       await s.init();
       await s.signInWithApple();
-      backend.streakUpserts = 0;
       localStreak = (current: 4, best: 7, total: 21);
-      await s.syncStreak();
+      await settings.mergeRunStats(
+          {'C Major': (300, 228)}, {'Ionian': (300, 228)});
+      await s.recordWeeklySession(10, 8);
+      await sync.sync();
       expect(backend.streakRow, (4, 7, 21));
-      expect(await settings.socialPendingStreak(), isNull);
+      final week = backend.weeklyUpserts.last;
+      expect((week.sessions, week.attempts, week.correct), (1, 10, 8));
+      expect(backend.modeUpserts.last.scaleRunningScore, 76);
     });
 
-    test('queues when offline and flushes on refresh', () async {
-      final s = fresh();
+    test('this week sums every device', () async {
+      final s = withSync();
       await s.init();
       await s.signInWithApple();
-      backend.offline = true;
-      await s.syncStreak();
-      expect(backend.streakRow, isNull);
-      expect(await settings.socialPendingStreak(), '3|7|20');
-      backend.offline = false;
-      await s.refresh();
-      expect(backend.streakRow, (3, 7, 20));
-      expect(await settings.socialPendingStreak(), isNull);
+      // Another device already practiced this week.
+      final other = MockSyncBackend(syncBackend.server, userId: 'user-1');
+      final now = DateTime.now();
+      final theirs = WeeklyStat.empty(now).withSession(now, 20, 10);
+      await other.pushStats([
+        StatsRow('other-device', 'weekly:${theirs.isoWeek}',
+            {'w': theirs.encode()}, now),
+      ]);
+      await s.recordWeeklySession(10, 8);
+      await sync.sync();
+      final week = backend.weeklyUpserts.last;
+      expect((week.sessions, week.attempts, week.correct), (2, 30, 18));
     });
 
-    test('does nothing signed out', () async {
-      final s = fresh();
+    test('signed out, a sync pushes nothing to friends', () async {
+      final s = withSync();
       await s.init();
-      await s.syncStreak();
+      await s.recordWeeklySession(10, 8);
+      await sync.sync();
       expect(backend.streakUpserts, 0);
-      expect(await settings.socialPendingStreak(), isNull);
+      expect(backend.weeklyUpserts, isEmpty);
     });
   });
 
@@ -449,17 +477,18 @@ void main() {
   });
 
   group('weekly stats', () {
-    test('records a session into this week and pushes it', () async {
+    Future<WeeklyStat> stored() async =>
+        WeeklyStat.decode(await settings.socialWeeklyCurrent())!;
+
+    test('records a session into this week', () async {
       final s = fresh();
       await s.init();
-      await s.signInWithApple();
       await s.recordWeeklySession(10, 8);
-      final row = backend.weeklyUpserts.last;
+      final row = await stored();
       expect(row.sessions, 1);
       expect(row.attempts, 10);
       expect(row.correct, 8);
       expect(row.daysPracticed, 1);
-      expect(await settings.socialWeeklyDirty(), isFalse);
     });
 
     test('two sessions same day = 1 day, summed', () async {
@@ -468,7 +497,7 @@ void main() {
       await s.signInWithApple();
       await s.recordWeeklySession(10, 6);
       await s.recordWeeklySession(4, 4);
-      final row = backend.weeklyUpserts.last;
+      final row = await stored();
       expect(row.sessions, 2);
       expect(row.attempts, 14);
       expect(row.correct, 10);
@@ -480,23 +509,9 @@ void main() {
       await s.init();
       await s.signInWithApple();
       await s.recordWeeklySessionFrom({'C': (5, 4), 'G': (3, 2)});
-      final row = backend.weeklyUpserts.last;
+      final row = await stored();
       expect(row.attempts, 8);
       expect(row.correct, 6);
-    });
-
-    test('queues when offline and flushes on refresh', () async {
-      final s = fresh();
-      await s.init();
-      await s.signInWithApple();
-      backend.offline = true;
-      await s.recordWeeklySession(10, 8);
-      expect(backend.weeklyUpserts, isEmpty);
-      expect(await settings.socialWeeklyDirty(), isTrue);
-      backend.offline = false;
-      await s.refresh();
-      expect(backend.weeklyUpserts, isNotEmpty);
-      expect(await settings.socialWeeklyDirty(), isFalse);
     });
 
     test('weeklyStatsFor passes through the backend', () async {
@@ -545,31 +560,6 @@ void main() {
       expect((m.runAttempts, m.runCorrect), (16, 11));
       expect((m.jamAttempts, m.jamCorrect), (5, 5));
       expect((m.invAttempts, m.invCorrect), (7, 2));
-    });
-
-    test('records mode scores after practice and pushes them', () async {
-      final s = fresh();
-      await s.init();
-      await s.signInWithApple();
-      await settings.mergeRunStats(
-          {'C Major': (300, 228)}, {'Ionian': (300, 228)});
-      await s.recordModeScores();
-      expect(backend.modeUpserts.last.scaleRunningScore, 76);
-      expect(await settings.socialModeStatsDirty(), isFalse);
-    });
-
-    test('queues mode scores when offline and flushes on refresh', () async {
-      final s = fresh();
-      await s.init();
-      await s.signInWithApple();
-      backend.offline = true;
-      await s.recordModeScores();
-      expect(backend.modeUpserts, isEmpty);
-      expect(await settings.socialModeStatsDirty(), isTrue);
-      backend.offline = false;
-      await s.refresh();
-      expect(backend.modeUpserts, isNotEmpty);
-      expect(await settings.socialModeStatsDirty(), isFalse);
     });
 
     test('modeStatsFor passes through the backend', () async {

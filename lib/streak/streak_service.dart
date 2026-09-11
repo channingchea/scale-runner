@@ -153,6 +153,44 @@ class StreakService extends ChangeNotifier {
     );
   }
 
+  /// Take on a streak synced from another device, if that device practiced
+  /// more recently than this one. Best and total only ever go up. This is
+  /// what keeps the streak the same on every device: the phone practiced
+  /// today, the iPad opens, adopts, and tomorrow's session on the iPad
+  /// extends it from there.
+  Future<void> adoptSynced({
+    required int current,
+    required int best,
+    required int total,
+    required String lastDate,
+  }) async {
+    final s = await _prefs();
+    if (!_loaded) await init();
+    final last = _parseDate(lastDate);
+    if (last == null) return;
+    var changed = false;
+    if (_lastDate == null || last.isAfter(_lastDate!)) {
+      // A streak that already lapsed on the other device arrives as 0,
+      // quietly: the "streak lost" sheet is for a streak this device saw.
+      _current = _today.difference(last).inDays <= 1 ? current : 0;
+      _lastDate = last;
+      await s.setDailyStreakCurrent(_current);
+      await s.setDailyStreakLastDate(lastDate);
+      changed = true;
+    }
+    if (best > _best) {
+      _best = best;
+      await s.setDailyStreakBest(best);
+      changed = true;
+    }
+    if (total > _totalDays) {
+      _totalDays = total;
+      await s.setDailyStreakTotalDays(total);
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
   /// The UI takes ownership of the pending open event (show a sheet once).
   StreakOpenEvent? consumeOpenEvent() {
     final e = pendingOpenEvent;

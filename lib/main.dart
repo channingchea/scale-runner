@@ -15,6 +15,7 @@ import 'screens/splash_screen.dart';
 import 'social/social_config.dart';
 import 'social/social_service.dart';
 import 'streak/streak_service.dart';
+import 'sync/sync_service.dart';
 
 /// Lets deep links push screens from outside the widget tree.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -25,11 +26,10 @@ void main() async {
   PurchaseService.instance.configure();
   SocialService.instance.init();
   // Practicing reshuffles the reminder schedule (cancel today's, push the
-  // win-back out) and pushes the streak to friends. Fire-and-forget:
-  // neither ever blocks the UI.
+  // win-back out). Fire-and-forget: never blocks the UI. The streak itself
+  // reaches friends through SyncService, woken by the streak's own write.
   StreakService.instance.onPracticeRecorded = (_) {
     NotificationService.instance.resync();
-    SocialService.instance.syncStreak();
   };
   StreakService.instance.init().then(
       (_) => NotificationService.instance.resync());
@@ -43,7 +43,8 @@ class ScaleRunnerApp extends StatefulWidget {
   State<ScaleRunnerApp> createState() => _ScaleRunnerAppState();
 }
 
-class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
+class _ScaleRunnerAppState extends State<ScaleRunnerApp>
+    with WidgetsBindingObserver {
   final MidiService _midi = MidiService();
   StreamSubscription<Uri>? _linkSub;
   String? _lastInviteCode; // dedupes initial-link double delivery
@@ -51,8 +52,15 @@ class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _midi.start();
     _initDeepLinks();
+  }
+
+  /// Coming back to the app is when the other device's changes should show.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) SyncService.instance.sync();
   }
 
   Future<void> _initDeepLinks() async {
@@ -82,6 +90,7 @@ class _ScaleRunnerAppState extends State<ScaleRunnerApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
     _midi.dispose();
     super.dispose();

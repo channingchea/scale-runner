@@ -200,7 +200,6 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     if (settings != null) {
       await settings.mergeRunStats(c.keySnapshot, c.modeSnapshot);
       unawaited(SocialService.instance.recordWeeklySessionFrom(c.keySnapshot));
-      unawaited(SocialService.instance.recordModeScores());
     }
     final streakUpdate = await StreakService.instance.recordPractice();
     if (mounted) {

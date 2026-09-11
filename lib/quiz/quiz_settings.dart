@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../onboarding/mode_guides.dart' show GuideMode;
@@ -7,6 +10,8 @@ import '../theory/scale_running.dart';
 import '../theory/jam_mode.dart';
 import '../theory/voicings.dart';
 import '../social/social_models.dart';
+import '../sync/sync_backend.dart' show SettingRow, StatsRow;
+import '../sync/synced_settings.dart';
 import '../theory/fretboard.dart' show Instrument;
 import '../widgets/fretboard_view.dart' show FretboardLabels, TwinDotMode;
 import 'quiz_controller.dart';
@@ -41,9 +46,9 @@ enum TimingDifficulty {
 /// the friendly default for a first launch. An empty stored list is respected
 /// as "none", but callers should prevent saving an empty selection.
 class QuizSettings {
-  QuizSettings._(this._prefs);
+  QuizSettings._(SharedPreferencesAsync prefs) : _prefs = _SyncedPrefs(prefs);
 
-  final SharedPreferencesAsync _prefs;
+  final _SyncedPrefs _prefs;
 
   static String _keyFor(QuizMode mode) =>
       mode == QuizMode.scale ? 'enabled_scales' : 'enabled_chords';
@@ -124,6 +129,16 @@ class QuizSettings {
   static const _voicingShowFormulaKey = 'voicing_show_formula';
   static const _voicingFoldersKey = 'voicing_folders';
   static const _voicingTagsKey = 'voicing_tags';
+  static const _voicingDeletedKey = 'voicing_deleted';
+  static const _deviceIdKey = 'sync_device_id';
+  static const _syncLastAtKey = 'sync_last_at';
+
+  /// Called after every write to data that syncs across devices. SyncService
+  /// installs itself here; nothing else should. Writes made *by* sync go
+  /// through [applyRemoteLibrary] and don't fire it.
+  static void Function()? onSyncedDataChanged;
+
+  static void _touch() => onSyncedDataChanged?.call();
   static const _voicingExpandedKey = 'voicing_expanded_folders';
 
   // Latency configuration.
@@ -256,17 +271,38 @@ class QuizSettings {
     await _prefs.setBool(_tickHapticKey, on);
   }
 
-  /// Lifetime score for [mode], persisted across navigation and launches.
-  Future<int> quizScore(QuizMode mode) async =>
-      await _prefs.getInt(_scoreKeyFor(mode)) ?? 0;
+  /// Lifetime score for [mode]: this device's wins plus every other synced
+  /// device's. Persisted across navigation and launches.
+  Future<int> quizScore(QuizMode mode) async {
+    var total = await _prefs.getInt(_scoreKeyFor(mode)) ?? 0;
+    for (final b in await _remoteBuckets(_scoreKeyFor(mode))) {
+      total += (b['v'] as num?)?.toInt() ?? 0;
+    }
+    return total;
+  }
 
-  /// Best streak for [mode], persisted across navigation and launches.
-  Future<int> quizBestStreak(QuizMode mode) async =>
-      await _prefs.getInt(_bestStreakKeyFor(mode)) ?? 0;
+  /// Best streak for [mode] on any device.
+  Future<int> quizBestStreak(QuizMode mode) async {
+    var best = await _prefs.getInt(_bestStreakKeyFor(mode)) ?? 0;
+    for (final b in await _remoteBuckets(_bestStreakKeyFor(mode))) {
+      best = max(best, (b['v'] as num?)?.toInt() ?? 0);
+    }
+    return best;
+  }
 
-  Future<void> setQuizStats(QuizMode mode, int score, int bestStreak) async {
-    await _prefs.setInt(_scoreKeyFor(mode), score);
-    await _prefs.setInt(_bestStreakKeyFor(mode), bestStreak);
+  /// One more correct answer: this device's score goes up by one and its
+  /// best streak takes [bestStreak] if higher.
+  Future<void> recordQuizWin(QuizMode mode, int bestStreak) async {
+    final score = await _prefs.getInt(_scoreKeyFor(mode)) ?? 0;
+    final best = await _prefs.getInt(_bestStreakKeyFor(mode)) ?? 0;
+    await _prefs.setInt(_scoreKeyFor(mode), score + 1);
+    await _prefs.setInt(_bestStreakKeyFor(mode), max(best, bestStreak));
+  }
+
+  /// Zero this device's quiz score and best streak for [mode].
+  Future<void> resetQuizStats(QuizMode mode) async {
+    await _prefs.setInt(_scoreKeyFor(mode), 0);
+    await _prefs.setInt(_bestStreakKeyFor(mode), 0);
   }
 
   /// The metronome tempo, shared across modes. Default 100.
@@ -592,12 +628,12 @@ class QuizSettings {
 
   /// Lifetime per-quality accuracy aggregates, accumulated across all sessions.
   /// Map key → (attempts, correct). Used to surface long-term weak spots.
-  Future<Map<String, (int, int)>> jamQualityStats() async =>
-      _decodeStats(await _prefs.getStringList(_jamQualityStatsKey));
+  Future<Map<String, (int, int)>> jamQualityStats() =>
+      _mergedCounters(_jamQualityStatsKey);
 
   /// Lifetime per-degree accuracy aggregates (Roman numeral → attempts/correct).
-  Future<Map<String, (int, int)>> jamDegreeStats() async =>
-      _decodeStats(await _prefs.getStringList(_jamDegreeStatsKey));
+  Future<Map<String, (int, int)>> jamDegreeStats() =>
+      _mergedCounters(_jamDegreeStatsKey);
 
   /// Merge one finished session's tallies into the persisted lifetime totals.
   /// Each map is `key → (attempts, correct)` for the session just played.
@@ -605,8 +641,8 @@ class QuizSettings {
     Map<String, (int, int)> quality,
     Map<String, (int, int)> degree,
   ) async {
-    final mergedQ = _mergeStats(await jamQualityStats(), quality);
-    final mergedD = _mergeStats(await jamDegreeStats(), degree);
+    final mergedQ = _mergeStats(await _ownCounters(_jamQualityStatsKey), quality);
+    final mergedD = _mergeStats(await _ownCounters(_jamDegreeStatsKey), degree);
     await _prefs.setStringList(_jamQualityStatsKey, _encodeStats(mergedQ));
     await _prefs.setStringList(_jamDegreeStatsKey, _encodeStats(mergedD));
   }
@@ -619,13 +655,13 @@ class QuizSettings {
 
   /// Lifetime per-key accuracy aggregates for Scale Running ("C Major" →
   /// attempts/correct), accumulated across all sessions.
-  Future<Map<String, (int, int)>> runKeyStats() async =>
-      _decodeStats(await _prefs.getStringList(_runKeyStatsKey));
+  Future<Map<String, (int, int)>> runKeyStats() =>
+      _mergedCounters(_runKeyStatsKey);
 
   /// Lifetime per-mode accuracy aggregates for Scale Running ("Dorian" →
   /// attempts/correct).
-  Future<Map<String, (int, int)>> runModeStats() async =>
-      _decodeStats(await _prefs.getStringList(_runModeStatsKey));
+  Future<Map<String, (int, int)>> runModeStats() =>
+      _mergedCounters(_runModeStatsKey);
 
   /// Merge one finished Scale Running session's tallies into the persisted
   /// lifetime totals. Each map is `key → (attempts, correct)`.
@@ -633,8 +669,8 @@ class QuizSettings {
     Map<String, (int, int)> keyStats,
     Map<String, (int, int)> modeStats,
   ) async {
-    final mergedK = _mergeStats(await runKeyStats(), keyStats);
-    final mergedM = _mergeStats(await runModeStats(), modeStats);
+    final mergedK = _mergeStats(await _ownCounters(_runKeyStatsKey), keyStats);
+    final mergedM = _mergeStats(await _ownCounters(_runModeStatsKey), modeStats);
     await _prefs.setStringList(_runKeyStatsKey, _encodeStats(mergedK));
     await _prefs.setStringList(_runModeStatsKey, _encodeStats(mergedM));
   }
@@ -647,13 +683,13 @@ class QuizSettings {
 
   /// Lifetime per-chord-type accuracy aggregates for Inversion Running
   /// ("Major" → attempts/correct), accumulated across all sessions.
-  Future<Map<String, (int, int)>> invChordStats() async =>
-      _decodeStats(await _prefs.getStringList(_invChordStatsKey));
+  Future<Map<String, (int, int)>> invChordStats() =>
+      _mergedCounters(_invChordStatsKey);
 
   /// Merge one finished Inversion Running session's tally into the persisted
   /// lifetime totals. Map is `chord name → (attempts, correct)`.
   Future<void> mergeInversionStats(Map<String, (int, int)> chordStats) async {
-    final merged = _mergeStats(await invChordStats(), chordStats);
+    final merged = _mergeStats(await _ownCounters(_invChordStatsKey), chordStats);
     await _prefs.setStringList(_invChordStatsKey, _encodeStats(merged));
   }
 
@@ -661,6 +697,140 @@ class QuizSettings {
   Future<void> resetInversionStats() async {
     await _prefs.remove(_invChordStatsKey);
   }
+
+  // ---- Stats across devices ----
+  //
+  // Every counter above is *this device's* bucket. Sync uploads it under the
+  // device id and caches the other devices' buckets here; readers sum the
+  // lot. Nothing is ever merged into the local bucket, so a repeated upload
+  // can't double count and "reset" only ever clears this device.
+
+  static const _remoteStatsKey = 'sync_remote_stats';
+  static const _counterKeys = [
+    _runKeyStatsKey,
+    _runModeStatsKey,
+    _invChordStatsKey,
+    _jamQualityStatsKey,
+    _jamDegreeStatsKey,
+  ];
+
+  Future<Map<String, (int, int)>> _ownCounters(String key) async =>
+      _decodeStats(await _prefs.getStringList(key));
+
+  Future<Map<String, (int, int)>> _mergedCounters(String key) async {
+    var total = await _ownCounters(key);
+    for (final b in await _remoteBuckets(key)) {
+      total = _mergeStats(total, {
+        for (final e in b.entries)
+          e.key: ((e.value as List)[0] as int, (e.value as List)[1] as int),
+      });
+    }
+    return total;
+  }
+
+  /// Other devices' buckets for [key], as cached by the last sync.
+  Future<List<Map<String, dynamic>>> _remoteBuckets(String key) async {
+    final raw = await _prefs.getString(_remoteStatsKey);
+    if (raw == null) return const [];
+    try {
+      final all = jsonDecode(raw) as Map<String, dynamic>;
+      return [
+        for (final b in (all[key] as List? ?? const []))
+          Map<String, dynamic>.from(b as Map),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// This device's buckets, ready to upload. Counters and scores are always
+  /// present (empty or zero after a reset, so the server copy clears too);
+  /// the week and the daily streak only once there is one.
+  Future<Map<String, Map<String, dynamic>>> ownStatsSnapshot() async {
+    final out = <String, Map<String, dynamic>>{};
+    for (final k in _counterKeys) {
+      out[k] = {
+        for (final e in (await _ownCounters(k)).entries)
+          e.key: [e.value.$1, e.value.$2],
+      };
+    }
+    for (final mode in QuizMode.values) {
+      out[_scoreKeyFor(mode)] = {
+        'v': await _prefs.getInt(_scoreKeyFor(mode)) ?? 0
+      };
+      out[_bestStreakKeyFor(mode)] = {
+        'v': await _prefs.getInt(_bestStreakKeyFor(mode)) ?? 0
+      };
+    }
+    final week = WeeklyStat.decode(await socialWeeklyCurrent());
+    if (week != null) out['weekly:${week.isoWeek}'] = {'w': week.encode()};
+    final last = await dailyStreakLastDate();
+    if (last != null) {
+      out['daily_streak'] = {
+        'current': await dailyStreakCurrent(),
+        'best': await dailyStreakBest(),
+        'total': await dailyStreakTotalDays(),
+        'last': last,
+      };
+    }
+    return out;
+  }
+
+  /// Sync's write path: cache every bucket that isn't ours.
+  Future<void> applyRemoteStats(List<StatsRow> rows, String ownDeviceId) async {
+    final byKey = <String, List<Map<String, dynamic>>>{};
+    for (final r in rows) {
+      if (r.deviceId == ownDeviceId) continue;
+      (byKey[r.key] ??= []).add(r.data);
+    }
+    await _prefs._p.setString(_remoteStatsKey, jsonEncode(byKey));
+  }
+
+  /// This week's practice on every device: sessions and attempts summed,
+  /// days OR-ed. Null before any practice this week anywhere.
+  Future<WeeklyStat?> mergedWeeklyCurrent() async {
+    final iso = isoWeekOf(DateTime.now());
+    var own = WeeklyStat.decode(await socialWeeklyCurrent());
+    if (own != null && own.isoWeek != iso) own = null;
+    var total = own;
+    for (final b in await _remoteBuckets('weekly:$iso')) {
+      final w = WeeklyStat.decode(b['w'] as String?);
+      if (w == null) continue;
+      total = total == null
+          ? w
+          : WeeklyStat(
+              isoWeek: iso,
+              weekStart: total.weekStart,
+              daysMask: total.daysMask | w.daysMask,
+              sessions: total.sessions + w.sessions,
+              attempts: total.attempts + w.attempts,
+              correct: total.correct + w.correct,
+            );
+    }
+    return total;
+  }
+
+  /// The most recently practiced other device's daily streak, or null.
+  Future<({int current, int best, int total, String last})?>
+      newestRemoteStreak() async {
+    ({int current, int best, int total, String last})? newest;
+    for (final b in await _remoteBuckets('daily_streak')) {
+      final last = b['last'] as String?;
+      if (last == null) continue;
+      if (newest == null || last.compareTo(newest.last) > 0) {
+        newest = (
+          current: (b['current'] as num?)?.toInt() ?? 0,
+          best: (b['best'] as num?)?.toInt() ?? 0,
+          total: (b['total'] as num?)?.toInt() ?? 0,
+          last: last,
+        );
+      }
+    }
+    return newest;
+  }
+
+  /// Forget the other devices' buckets (sign-out).
+  Future<void> clearRemoteStats() => _prefs._p.remove(_remoteStatsKey);
 
   /// Lifetime per-mode totals for the shareable overview scores, summed from
   /// the stored running aggregates. Scale Running sums per-key plays, Jam
@@ -704,37 +874,182 @@ class QuizSettings {
     final stored = await _prefs.getStringList(_voicingCustomsKey);
     if (stored == null) return [];
     return [
-      for (final line in stored) ?VoicingSpec.decode(line),
+      for (var i = 0; i < stored.length; i++)
+        ?VoicingSpec.decode(stored[i], fallbackPosition: i.toDouble()),
     ];
   }
 
   /// Add [spec], or replace the one already holding its id. An edit or rename
-  /// keeps its place in the list rather than jumping to the end.
+  /// keeps its place in the list rather than jumping to the end. Stamps
+  /// [VoicingSpec.updatedAt] so sync knows this copy is the newest.
   Future<void> upsertVoicing(VoicingSpec spec) async {
     final all = await savedVoicings();
     final i = all.indexWhere((v) => v.id == spec.id);
+    final now = DateTime.now();
     if (i >= 0) {
-      all[i] = spec;
+      all[i] = spec.copyWith(updatedAt: now);
     } else {
-      all.add(spec);
+      all.add(spec.copyWith(
+          updatedAt: now,
+          position: all.isEmpty ? 0 : all.last.position + 1));
     }
     await _writeVoicings(all);
+    _touch();
   }
 
   /// Replace the stored order with [ordered]. The list order *is* the display
-  /// order, so reordering is just a rewrite — no sort key to keep in sync.
-  Future<void> reorderVoicings(List<VoicingSpec> ordered) =>
-      _writeVoicings(ordered);
+  /// order; positions are repaired to match and only the records that moved
+  /// get a new `updatedAt`, so a reorder here can't overwrite an unrelated
+  /// edit made elsewhere.
+  Future<void> reorderVoicings(List<VoicingSpec> ordered) async {
+    final pos = repairPositions([for (final v in ordered) v.position]);
+    final now = DateTime.now();
+    await _writeVoicings([
+      for (var i = 0; i < ordered.length; i++)
+        pos[i] == ordered[i].position
+            ? ordered[i]
+            : ordered[i].copyWith(position: pos[i], updatedAt: now),
+    ]);
+    _touch();
+  }
 
   Future<void> deleteVoicing(String id) async {
     final all = await savedVoicings();
     all.removeWhere((v) => v.id == id);
     await _writeVoicings(all);
+    await _recordDeleted(id, 'voicing');
+    _touch();
+  }
+
+  /// Sync's write path: upsert records that won their merge and drop ids the
+  /// other device deleted, then restore position order. Reads the current
+  /// lists first so an edit made while sync was in flight isn't clobbered.
+  /// Does not fire [onSyncedDataChanged].
+  Future<void> applyRemoteLibrary({
+    List<VoicingSpec> voicings = const [],
+    List<VoicingLabel> folders = const [],
+    List<VoicingLabel> tags = const [],
+    Set<String> deletedIds = const {},
+  }) async {
+    if (voicings.isNotEmpty || deletedIds.isNotEmpty) {
+      final all = _merge(await savedVoicings(), voicings, deletedIds,
+          (v) => v.id, (v) => v.position);
+      await _writeVoicings(all);
+    }
+    if (folders.isNotEmpty || deletedIds.isNotEmpty) {
+      final all = _merge(await voicingFolders(), folders, deletedIds,
+          (f) => f.id, (f) => f.position);
+      await _writeVoicingFolders(all);
+    }
+    if (tags.isNotEmpty || deletedIds.isNotEmpty) {
+      final all = _merge(await voicingTags(), tags, deletedIds,
+          (t) => t.id, (t) => t.position);
+      await _writeVoicingTags(all);
+    }
+  }
+
+  static List<T> _merge<T>(List<T> current, List<T> incoming,
+      Set<String> deleted, String Function(T) idOf, double Function(T) posOf) {
+    final byId = {for (final r in current) idOf(r): r};
+    for (final r in incoming) {
+      byId[idOf(r)] = r;
+    }
+    deleted.forEach(byId.remove);
+    // Ties broken by id so every device settles on the same order.
+    return byId.values.toList()
+      ..sort((a, b) {
+        final c = posOf(a).compareTo(posOf(b));
+        return c != 0 ? c : idOf(a).compareTo(idOf(b));
+      });
+  }
+
+  /// When the last sync finished, or null if never (or since sign-out).
+  Future<DateTime?> syncLastAt() async {
+    final s = await _prefs.getString(_syncLastAtKey);
+    return s == null ? null : DateTime.tryParse(s);
+  }
+
+  Future<void> setSyncLastAt(DateTime? at) => at == null
+      ? _prefs.remove(_syncLastAtKey)
+      : _prefs.setString(_syncLastAtKey, at.toIso8601String());
+
+  /// Every synced setting this device has a value for, with when it last
+  /// changed here. A value set before sync existed has no stamp and reads as
+  /// the epoch, so a synced copy from any device wins over it.
+  Future<List<SettingRow>> syncedSettingsSnapshot() async {
+    final out = <SettingRow>[];
+    for (final e in kSyncedSettings.entries) {
+      final v = await _prefs.raw(e.key, e.value);
+      if (v == null) continue;
+      final at = await _prefs._p.getInt(_SyncedPrefs.stampKey(e.key)) ?? 0;
+      out.add(SettingRow(e.key, encodeSetting(v),
+          DateTime.fromMicrosecondsSinceEpoch(at)));
+    }
+    return out;
+  }
+
+  /// Sync's write path for settings: store each value with the other
+  /// device's stamp, without firing [onSyncedDataChanged]. Rows that don't
+  /// parse are skipped.
+  Future<void> applyRemoteSettings(List<SettingRow> rows) async {
+    for (final r in rows) {
+      final type = kSyncedSettings[r.key];
+      if (type == null) continue;
+      final v = decodeSetting(type, r.value);
+      if (v == null) continue;
+      await _prefs.writeRaw(r.key, v);
+      await _prefs._p.setInt(
+          _SyncedPrefs.stampKey(r.key), r.updatedAt.microsecondsSinceEpoch);
+    }
   }
 
   Future<void> _writeVoicings(List<VoicingSpec> all) async {
     await _prefs.setStringList(
         _voicingCustomsKey, [for (final v in all) v.encode()]);
+  }
+
+  // ---- Tombstones ----
+  //
+  // A delete has to reach the other devices, and a record that is simply
+  // missing looks the same as one that was never synced. So each delete
+  // leaves a `{id, kind, at}` line here until sync has pushed it.
+
+  Future<List<DeletedRecord>> deletedRecords() async {
+    final stored = await _prefs.getStringList(_voicingDeletedKey);
+    if (stored == null) return [];
+    return [for (final line in stored) ?DeletedRecord.decode(line)];
+  }
+
+  Future<void> _recordDeleted(String id, String kind) async {
+    final all = await deletedRecords();
+    all.removeWhere((d) => d.id == id);
+    all.add(DeletedRecord(id, kind, DateTime.now()));
+    await _prefs.setStringList(
+        _voicingDeletedKey, [for (final d in all) d.encode()]);
+  }
+
+  /// Drop tombstones once their deletes are on the server.
+  Future<void> pruneDeletedRecords(Iterable<String> ids) async {
+    final gone = ids.toSet();
+    final kept = [
+      for (final d in await deletedRecords())
+        if (!gone.contains(d.id)) d.encode(),
+    ];
+    await _prefs.setStringList(_voicingDeletedKey, kept);
+  }
+
+  /// This install's stable id, minted on first use. Stats sync uploads each
+  /// device's counters under its own id so they can be summed, never merged.
+  Future<String> deviceId() async {
+    final stored = await _prefs.getString(_deviceIdKey);
+    if (stored != null) return stored;
+    final rng = Random.secure();
+    final id = [
+      for (var i = 0; i < 16; i++)
+        rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ].join();
+    await _prefs.setString(_deviceIdKey, id);
+    return id;
   }
 
   // ---- Voicing folders ----
@@ -748,19 +1063,32 @@ class QuizSettings {
   Future<List<VoicingFolder>> voicingFolders() async {
     final stored = await _prefs.getStringList(_voicingFoldersKey);
     if (stored == null) return [];
-    return [for (final line in stored) ?VoicingFolder.decode(line)];
+    return [
+      for (var i = 0; i < stored.length; i++)
+        ?VoicingFolder.decode(stored[i], fallbackPosition: i.toDouble()),
+    ];
   }
 
   /// Add [folder], or replace the one already holding its id (a rename).
   Future<void> upsertVoicingFolder(VoicingFolder folder) async {
     final all = await voicingFolders();
-    final i = all.indexWhere((f) => f.id == folder.id);
+    await _writeVoicingFolders(_upsertLabel(all, folder));
+    _touch();
+  }
+
+  /// Shared by folders and tags: replace in place or append at the end, and
+  /// stamp `updatedAt` either way.
+  static List<VoicingLabel> _upsertLabel(
+      List<VoicingLabel> all, VoicingLabel label) {
+    final i = all.indexWhere((l) => l.id == label.id);
+    final now = DateTime.now();
     if (i >= 0) {
-      all[i] = folder;
+      all[i] = label.copyWith(updatedAt: now, position: all[i].position);
     } else {
-      all.add(folder);
+      all.add(label.copyWith(
+          updatedAt: now, position: all.isEmpty ? 0 : all.last.position + 1));
     }
-    await _writeVoicingFolders(all);
+    return all;
   }
 
   /// Remove the folder and turn its members loose into Ungrouped. Deleting a
@@ -769,19 +1097,32 @@ class QuizSettings {
     final all = await voicingFolders();
     all.removeWhere((f) => f.id == id);
     await _writeVoicingFolders(all);
+    await _recordDeleted(id, 'folder');
     final voicings = await savedVoicings();
+    final now = DateTime.now();
     var touched = false;
     for (var i = 0; i < voicings.length; i++) {
       if (voicings[i].folderId == id) {
-        voicings[i] = voicings[i].copyWith(clearFolder: true);
+        voicings[i] = voicings[i].copyWith(clearFolder: true, updatedAt: now);
         touched = true;
       }
     }
     if (touched) await _writeVoicings(voicings);
+    _touch();
   }
 
-  Future<void> reorderVoicingFolders(List<VoicingFolder> ordered) =>
-      _writeVoicingFolders(ordered);
+  /// Same contract as [reorderVoicings]: only the folders that moved change.
+  Future<void> reorderVoicingFolders(List<VoicingFolder> ordered) async {
+    final pos = repairPositions([for (final f in ordered) f.position]);
+    final now = DateTime.now();
+    await _writeVoicingFolders([
+      for (var i = 0; i < ordered.length; i++)
+        pos[i] == ordered[i].position
+            ? ordered[i]
+            : ordered[i].copyWith(position: pos[i], updatedAt: now),
+    ]);
+    _touch();
+  }
 
   Future<void> _writeVoicingFolders(List<VoicingFolder> all) async {
     await _prefs.setStringList(
@@ -807,19 +1148,17 @@ class QuizSettings {
   Future<List<VoicingTag>> voicingTags() async {
     final stored = await _prefs.getStringList(_voicingTagsKey);
     if (stored == null) return [];
-    return [for (final line in stored) ?VoicingTag.decode(line)];
+    return [
+      for (var i = 0; i < stored.length; i++)
+        ?VoicingTag.decode(stored[i], fallbackPosition: i.toDouble()),
+    ];
   }
 
   /// Add [tag], or replace the one already holding its id (a rename).
   Future<void> upsertVoicingTag(VoicingTag tag) async {
     final all = await voicingTags();
-    final i = all.indexWhere((t) => t.id == tag.id);
-    if (i >= 0) {
-      all[i] = tag;
-    } else {
-      all.add(tag);
-    }
-    await _writeVoicingTags(all);
+    await _writeVoicingTags(_upsertLabel(all, tag));
+    _touch();
   }
 
   /// Remove the tag from the library *and* from every voicing carrying it.
@@ -827,17 +1166,21 @@ class QuizSettings {
     final all = await voicingTags();
     all.removeWhere((t) => t.id == id);
     await _writeVoicingTags(all);
+    await _recordDeleted(id, 'tag');
     final voicings = await savedVoicings();
+    final now = DateTime.now();
     var touched = false;
     for (var i = 0; i < voicings.length; i++) {
       if (voicings[i].tagIds.contains(id)) {
         voicings[i] = voicings[i].copyWith(
           tagIds: [for (final t in voicings[i].tagIds) if (t != id) t],
+          updatedAt: now,
         );
         touched = true;
       }
     }
     if (touched) await _writeVoicings(voicings);
+    _touch();
   }
 
   Future<void> _writeVoicingTags(List<VoicingTag> all) async {
@@ -996,21 +1339,8 @@ class QuizSettings {
       _prefs.setBool(_reminderPromptSeenKey, true);
 
   // ---- Social ----
-  static const _socialPendingStreakKey = 'social_pending_streak';
   static const _socialSeenAtKey = 'social_activity_seen_at';
   static const _socialWeeklyKey = 'social_weekly_current';
-  static const _socialWeeklyDirtyKey = 'social_weekly_dirty';
-  static const _socialModeStatsDirtyKey = 'social_mode_stats_dirty';
-
-  /// A streak payload ("current|best|total") that couldn't be pushed to the
-  /// backend yet (offline / transient error), or null when fully synced.
-  Future<String?> socialPendingStreak() async =>
-      _prefs.getString(_socialPendingStreakKey);
-
-  Future<void> setSocialPendingStreak(String? encoded) async =>
-      encoded == null
-          ? _prefs.remove(_socialPendingStreakKey)
-          : _prefs.setString(_socialPendingStreakKey, encoded);
 
   /// When the activity feed was last viewed (ISO-8601 UTC), for the unread
   /// badge on "friend joined" items. Applause read-state lives server-side.
@@ -1027,20 +1357,6 @@ class QuizSettings {
 
   Future<void> setSocialWeeklyCurrent(String encoded) async =>
       _prefs.setString(_socialWeeklyKey, encoded);
-
-  /// Whether the local weekly aggregate has changes not yet pushed to Supabase.
-  Future<bool> socialWeeklyDirty() async =>
-      await _prefs.getBool(_socialWeeklyDirtyKey) ?? false;
-
-  Future<void> setSocialWeeklyDirty(bool v) async =>
-      _prefs.setBool(_socialWeeklyDirtyKey, v);
-
-  /// Whether the local per-mode totals have changes not yet pushed to Supabase.
-  Future<bool> socialModeStatsDirty() async =>
-      await _prefs.getBool(_socialModeStatsDirtyKey) ?? false;
-
-  Future<void> setSocialModeStatsDirty(bool v) async =>
-      _prefs.setBool(_socialModeStatsDirtyKey, v);
 
   /// Encode `key → (attempts, correct)` as `"key|attempts|correct"` lines. Keys
   /// (quality suffixes, Roman numerals) never contain a pipe.
@@ -1082,4 +1398,66 @@ class QuizSettings {
   Future<void> setInputLatencyMs(String deviceName, int ms) async {
     await _prefs.setInt(_latencyKeyFor(deviceName), ms);
   }
+}
+
+/// The prefs handle QuizSettings writes through. Same surface as
+/// SharedPreferencesAsync for the methods used here, plus: a write to a key
+/// in [kSyncedSettings] also records when it changed (for the cross-device
+/// merge) and pings [QuizSettings.onSyncedDataChanged]. Sync's own writes go
+/// through [writeRaw] and do neither.
+class _SyncedPrefs {
+  _SyncedPrefs(this._p);
+
+  final SharedPreferencesAsync _p;
+
+  static String stampKey(String key) => '${key}_updated_at';
+
+  Future<bool?> getBool(String k) => _p.getBool(k);
+  Future<int?> getInt(String k) => _p.getInt(k);
+  Future<String?> getString(String k) => _p.getString(k);
+  Future<List<String>?> getStringList(String k) => _p.getStringList(k);
+
+  Future<void> setBool(String k, bool v) => _write(k, () => _p.setBool(k, v));
+  Future<void> setInt(String k, int v) => _write(k, () => _p.setInt(k, v));
+  Future<void> setString(String k, String v) =>
+      _write(k, () => _p.setString(k, v));
+  Future<void> setStringList(String k, List<String> v) =>
+      _write(k, () => _p.setStringList(k, v));
+  Future<void> remove(String k) => _write(k, () => _p.remove(k));
+
+  /// Stats keys: no per-key stamp (buckets are uploaded whole), just a ping.
+  static const _statKeys = {
+    'run_key_stats', 'run_mode_stats', 'inv_chord_stats',
+    'jam_quality_stats', 'jam_degree_stats',
+    'score_scales', 'score_chords', 'best_streak_scales', 'best_streak_chords',
+    'social_weekly_current',
+    'daily_streak_current', 'daily_streak_best', 'daily_streak_total_days',
+    'daily_streak_last_date',
+  };
+
+  Future<void> _write(String k, Future<void> Function() w) async {
+    await w();
+    if (kSyncedSettings.containsKey(k)) {
+      await _p.setInt(stampKey(k), DateTime.now().microsecondsSinceEpoch);
+      QuizSettings._touch();
+    } else if (_statKeys.contains(k)) {
+      QuizSettings._touch();
+    }
+  }
+
+  /// The stored value of a synced key in its own type, or null if unset.
+  Future<Object?> raw(String k, SettingType type) => switch (type) {
+        SettingType.boolean => _p.getBool(k),
+        SettingType.integer => _p.getInt(k),
+        SettingType.string => _p.getString(k),
+        SettingType.stringList => _p.getStringList(k),
+      };
+
+  Future<void> writeRaw(String k, Object v) => switch (v) {
+        bool b => _p.setBool(k, b),
+        int i => _p.setInt(k, i),
+        String s => _p.setString(k, s),
+        List<String> l => _p.setStringList(k, l),
+        _ => throw ArgumentError('unsupported setting value: $v'),
+      };
 }

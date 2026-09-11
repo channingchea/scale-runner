@@ -391,8 +391,9 @@ class _JamModeSettingsSheetState extends State<JamModeSettingsSheet> {
         title: const Text('Reset stats?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'This clears your accumulated per-quality and per-degree accuracy. '
-          'It can\'t be undone.',
+          'This clears the per-quality and per-degree accuracy recorded on '
+          'this device. Practice synced from other devices stays. It can\'t '
+          'be undone.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
