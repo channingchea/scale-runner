@@ -1,3 +1,7 @@
+> **2026-09-11:** streak, weekly-stats and mode-stats pushes now go through
+> `SyncService` (see `cross-device-sync.md`). `SocialService._pushAggregates` writes the
+> friends-facing rows as the sum over every signed-in device after each pull.
+
 # Social Features (Friends, Applause, Leaderboard) — Implementation Plan
 
 Status: **implemented (all 5 phases), 2026-07-14** — analyze/test clean (294 tests).
