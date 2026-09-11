@@ -275,9 +275,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 24),
                 _buildMidiBanner(),
                 const SizedBox(height: 24),
-                Text('Practice',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700)),
+                // Practice: untimed, self-paced modes.
+                const _SectionHeader(title: 'Practice'),
                 const SizedBox(height: 12),
                 _ModeCard(
                   title: 'Free Play',
@@ -308,8 +307,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   imagePath: 'assets/icon/Icon_Voicings.png',
                   onTap: _openVoicings,
                 ),
-                const SizedBox(height: 14),
-                // The three below are Pro; the free modes sit above them.
+                const SizedBox(height: 24),
+                // Drills: timed exercises judged against the metronome. Today
+                // that is exactly the Pro set, but the grouping is by exercise
+                // type, not gating.
+                const _SectionHeader(
+                  title: 'Drills',
+                  caption: 'Timed exercises against the metronome',
+                ),
+                const SizedBox(height: 12),
                 _ModeCard(
                   title: 'Scale Running',
                   subtitle:
@@ -449,6 +455,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A home-screen section title ("Practice", "Drills") with an optional
+/// one-line caption underneath.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, this.caption});
+
+  final String title;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700)),
+        if (caption != null) ...[
+          const SizedBox(height: 2),
+          Text(caption!,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12)),
+        ],
+      ],
     );
   }
 }
