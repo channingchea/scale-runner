@@ -28,8 +28,9 @@ import '../widgets/scale_run_settings_sheet.dart';
 import '../widgets/streak_sheets.dart';
 
 /// The Scale Running drill: a continuous, tempo-driven walk through keys.
-/// Hold the diatonic chord in one hand, run its mode in the other — one note
-/// per beat, judged against the metronome's clock.
+/// Play the diatonic chord on beat one, then run its mode — one note per
+/// beat, judged against the metronome's clock. On piano the chord is held
+/// under the run; on guitar it is struck and let go (see [ChordRule]).
 class ScaleRunScreen extends StatefulWidget {
   const ScaleRunScreen({super.key, required this.midi});
 
@@ -50,6 +51,13 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
   TwinDotMode _twinMode = TwinDotMode.primaryAndGhost;
   FretboardLabels _fretLabels = const FretboardLabels();
   final NotePlayer _notes = NotePlayer();
+
+  /// Guitar: the cells whose chord tones the controller is keeping lit, so
+  /// each lights where it was tapped rather than at the note's primary
+  /// position. Pruned against [ScaleRunController.latchedNotes] on every tap
+  /// and filtered by it at paint time, so the beat-1 tick unlights the neck
+  /// without a tap.
+  final Set<FretPosition> _struckCells = {};
 
   /// Live MIDI setup changes, so the latency correction can be
   /// re-resolved when a keyboard connects after this screen opened.
@@ -134,7 +142,10 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
       keyCountInEnabled: await settings.runKeyCountIn(),
       onBeatMs: difficulty.onBeatMs,
       closeMs: difficulty.closeMs,
-    );
+    )..chordRule = _instrument == Instrument.guitar
+        ? ChordRule.strike
+        : ChordRule.hold;
+    _struckCells.clear();
     // Correct for input latency: a saved per-device calibration always wins;
     // otherwise fall back to the BLE default only when the device currently
     // reports as BLE. USB and on-screen taps stay at 0. See
@@ -376,7 +387,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
       else
         Text(
           c.chordsEnabled
-              ? 'Hold the chord, run the mode: one note per beat'
+              ? (c.chordRule == ChordRule.strike
+                  ? 'Strike the chord, run the mode: one note per beat'
+                  : 'Hold the chord, run the mode: one note per beat')
               : 'Run the scale: one note per beat',
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -535,8 +548,9 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     null => null,
   };
 
-  /// Confirms the held chord registered — needed because the 2-octave
-  /// keyboard means chord and run can overlap in pitch.
+  /// Confirms the chord registered (held on piano, struck on guitar) —
+  /// needed because the 2-octave keyboard means chord and run can overlap in
+  /// pitch.
   Widget _buildChordIndicator(ScaleRunController c) {
     final held = c.chordHeldCorrectly && c.running;
     final missed = c.chordMissedThisBar;
@@ -566,8 +580,12 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
             missed
                 ? 'Chord missed'
                 : held
-                ? 'Chord held'
-                : 'Hold the chord',
+                ? (c.chordRule == ChordRule.strike
+                    ? 'Chord struck'
+                    : 'Chord held')
+                : (c.chordRule == ChordRule.strike
+                    ? 'Strike the chord'
+                    : 'Hold the chord'),
             style: TextStyle(
               color: color,
               fontSize: 13,
@@ -650,6 +668,15 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
     );
   }
 
+  void _tapCell(ScaleRunController c, FretPosition cell) {
+    c.tapCell(cell.midi());
+    final lit = c.latchedNotes;
+    setState(() {
+      _struckCells.removeWhere((x) => !lit.contains(x.midi()));
+      if (lit.contains(cell.midi())) _struckCells.add(cell);
+    });
+  }
+
   Widget _buildKeyboard(ScaleRunController c, double height, bool compact) {
     return SafeArea(
       top: false,
@@ -681,6 +708,18 @@ class _ScaleRunScreenState extends State<ScaleRunScreen> {
               isTargetHint: _showDots ? c.isTargetHint : (_) => false,
               onKeyDown: c.pressKey,
               onKeyUp: c.releaseKey,
+              // Guitar strikes its chord instead of holding it: taps go in
+              // as cells so a struck tone can stay lit where it was tapped,
+              // and no held shape blocks the run's strings.
+              latched: _instrument == Instrument.guitar
+                  ? {
+                      for (final cell in _struckCells)
+                        if (c.latchedNotes.contains(cell.midi())) cell,
+                    }
+                  : null,
+              onCellDown: _instrument == Instrument.guitar
+                  ? (cell) => _tapCell(c, cell)
+                  : null,
               compact: compact,
               leftHanded: _leftHanded,
               twinMode: _twinMode,

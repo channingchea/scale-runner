@@ -27,6 +27,19 @@ enum NoteResult {
 /// Lifecycle of the drill.
 enum RunPhase { idle, countingIn, running }
 
+/// How the chord is judged on beat 0 (chords ON).
+enum ChordRule {
+  /// Every chord tone must still be sounding when the drill leaves beat 0:
+  /// one hand holds, the other runs. Piano.
+  hold,
+
+  /// Every chord tone must have sounded somewhere in the beat-0 window
+  /// (including early strikes inside the usual tolerance); nothing has to
+  /// stay down. Strike the shape, then run. Guitar, where a string sounds one
+  /// note and a held shape would block the run.
+  strike,
+}
+
 /// Running attempts/correct tally for one scoring bucket (a key or mode).
 /// Shared shape with Jam Mode's `JamTally`, imported by name into
 /// [InversionRunController] as the common per-bucket scoring type.
@@ -75,7 +88,8 @@ RunTier runTierFor(double accuracy) {
 /// to its timing getters; tests inject fakes for all three.
 ///
 /// Each [RunStep] is an 8-beat bar: chord + run degree 1 on beat 0, one run
-/// note per beat, octave root on beat 7. Mistakes flash and break the streak
+/// note per beat, octave root on beat 7. Whether the chord is held through
+/// beat 0 or merely struck inside it is [chordRule]. Mistakes flash and break the streak
 /// but the drill never rewinds — like a real practice session.
 ///
 /// A session is one full lap of [sessionKeys] distinct keys (optionally
@@ -114,6 +128,10 @@ class ScaleRunController extends ChangeNotifier {
   /// screen when the meter changes while idle (the picker is locked while the
   /// drill is counting in or running).
   int beatsPerBar;
+
+  /// Hold (piano) or strike (guitar); set by the screen once it knows the
+  /// instrument, like [beatsPerBar]. Only read while chords are on.
+  ChordRule chordRule = ChordRule.hold;
 
   /// Fired on every tick that is beat 1 of something: the first count-in
   /// beat, the downbeat that starts the drill, and each bar's first beat as
@@ -223,6 +241,19 @@ class ScaleRunController extends ChangeNotifier {
   int _absBeat = 0;
 
   final Set<int> _held = {};
+
+  /// Strike rule: pitch classes that have sounded in this bar's beat-0
+  /// window, and those struck early for the next bar (back half of beat 7,
+  /// or the last count-in beat), promoted when that bar's beat 0 arrives.
+  final Set<int> _chordStruck = {};
+  final Set<int> _chordStruckNext = {};
+
+  /// Tap-only input (guitar cells): chord tones struck in their window stay
+  /// in [_held], lit on the neck, until the drill leaves beat 0.
+  final Set<int> _latched = {};
+
+  /// The notes [tapCell] is keeping lit (a copy).
+  Set<int> get latchedNotes => {..._latched};
   final Set<int> _wrongFlash = {};
   final Set<int> _correctFlash = {};
   Timer? _flashTimer;
@@ -288,11 +319,15 @@ class ScaleRunController extends ChangeNotifier {
   /// Distinct keys completed so far this session.
   int get keysCompleted => _keysCompleted;
 
-  /// Whether every chord tone is currently sounding (always true with chords
-  /// off). Containment, not exact match: the run hand legitimately adds notes.
+  /// Whether every chord tone is currently sounding — or, under
+  /// [ChordRule.strike], has sounded in this bar's beat-0 window. Always true
+  /// with chords off. Containment, not exact match: the run hand legitimately
+  /// adds notes.
   bool get chordHeldCorrectly {
     if (!chordsEnabled) return true;
-    final pcs = _held.map(pitchClassOf).toSet();
+    final pcs = chordRule == ChordRule.strike
+        ? _chordStruck
+        : _held.map(pitchClassOf).toSet();
     return currentStep.chordPcs.every(pcs.contains);
   }
 
@@ -369,6 +404,9 @@ class ScaleRunController extends ChangeNotifier {
     _results.fillRange(0, 8, null);
     _pendingNext = null;
     _chordMissedThisBar = false;
+    _chordStruck.clear();
+    _chordStruckNext.clear();
+    _dropLatched();
     _clearGrace();
     resetScores();
     notifyListeners();
@@ -380,6 +418,7 @@ class ScaleRunController extends ChangeNotifier {
     _openingCountIn = false;
     _results.fillRange(0, 8, null);
     _pendingNext = null;
+    _dropLatched();
     _clearGrace();
     notifyListeners();
     if (wasActive) onSessionEnd?.call();
@@ -422,6 +461,7 @@ class ScaleRunController extends ChangeNotifier {
           // session, or of the new key.
           _phase = RunPhase.running;
           _openingCountIn = false;
+          _beginChordWindow();
           _applyPending();
           onBarStart?.call();
         }
@@ -462,6 +502,8 @@ class ScaleRunController extends ChangeNotifier {
         streak = 0;
       }
     }
+    // The chord's window is over either way; the neck lets go of it.
+    if (_beatIndex == 0) _dropLatched();
     _absBeat++;
     _beatIndex++;
     if (_beatIndex >= 8) {
@@ -496,7 +538,23 @@ class ScaleRunController extends ChangeNotifier {
         }
       }
     }
+    if (_beatIndex == 0) _beginChordWindow();
     _applyPending();
+  }
+
+  /// A bar's beat 0 has arrived: its chord window opens, seeded with the
+  /// strikes that came in early for it.
+  void _beginChordWindow() {
+    _chordStruck
+      ..clear()
+      ..addAll(_chordStruckNext);
+    _chordStruckNext.clear();
+  }
+
+  /// Un-light everything [tapCell] latched.
+  void _dropLatched() {
+    _held.removeAll(_latched);
+    _latched.clear();
   }
 
   /// Begin the one-bar count-in that precedes the key just set in [_keyPc].
@@ -522,6 +580,10 @@ class ScaleRunController extends ChangeNotifier {
     _stepIndex = 0;
     _beatIndex = 0;
     _pendingNext = null;
+    // A whole count-in bar separates the last bar from the next chord, so
+    // nothing struck so far can be early for it.
+    _chordStruck.clear();
+    _chordStruckNext.clear();
   }
 
   void _applyPending() {
@@ -554,6 +616,32 @@ class ScaleRunController extends ChangeNotifier {
   void pressKey(int midiNote) {
     onAnyPress?.call(midiNote);
     _held.add(midiNote);
+    _recordStrike(midiNote);
+    _judgeIfDue(midiNote);
+    notifyListeners();
+  }
+
+  /// A tap on a surface with no release event (guitar cells under
+  /// [ChordRule.strike]). Judged like any press; a chord tone struck inside
+  /// its window then stays in [_held] — lit where it was tapped — until the
+  /// drill leaves beat 0, while anything else is let go at once and the
+  /// correct/wrong flash is its feedback. A second tap on a lit note changes
+  /// nothing: the strike already counted.
+  void tapCell(int midiNote) {
+    if (_latched.contains(midiNote)) return;
+    onAnyPress?.call(midiNote);
+    _held.add(midiNote);
+    final lit = _recordStrike(midiNote);
+    _judgeIfDue(midiNote);
+    if (lit) {
+      _latched.add(midiNote);
+    } else {
+      _held.remove(midiNote);
+    }
+    notifyListeners();
+  }
+
+  void _judgeIfDue(int midiNote) {
     if (_phase == RunPhase.running) {
       _judgePress(midiNote);
     } else if (_phase == RunPhase.countingIn && _countInRemaining == 0) {
@@ -564,7 +652,33 @@ class ScaleRunController extends ChangeNotifier {
       // keeps its backward-grace second chance across the boundary.
       _judgeGraceDuringCountIn(midiNote);
     }
-    notifyListeners();
+  }
+
+  /// Strike rule: log [midiNote] against the chord window it sounded in —
+  /// this bar's (anywhere on beat 0) or the next bar's (the back half of
+  /// beat 7, or the last count-in beat within grace of the downbeat, the same
+  /// tolerances an early run note gets). Returns true when the note is a
+  /// chord tone of that window, so a tap-only surface can keep it lit.
+  bool _recordStrike(int midiNote) {
+    if (chordRule != ChordRule.strike || !chordsEnabled) return false;
+    final pc = pitchClassOf(midiNote);
+    if (_phase == RunPhase.running && _beatIndex == 0) {
+      _chordStruck.add(pc);
+      return currentStep.chordPcs.contains(pc);
+    }
+    final Set<int>? nextChord;
+    if (_phase == RunPhase.running && _beatIndex == 7) {
+      nextChord = _judge.judgePress().early ? _nextStep?.chordPcs : null;
+    } else if (_phase == RunPhase.countingIn && _countInRemaining == 0) {
+      nextChord = _judge.withinGrace(_judge.offByBeforeNextTick())
+          ? currentStep.chordPcs
+          : null;
+    } else {
+      nextChord = null;
+    }
+    if (nextChord == null) return false;
+    _chordStruckNext.add(pc);
+    return nextChord.contains(pc);
   }
 
   /// The count-in variant of the backward-grace rescue in [_judgePress]:
@@ -627,8 +741,13 @@ class ScaleRunController extends ChangeNotifier {
     if (expectedPc == noExpectedNote) return;
 
     if (pc != expectedPc) {
-      // Re-striking a held chord tone is never wrong; anything else is.
-      if (!(chordsEnabled && currentStep.chordPcs.contains(pc))) {
+      // Re-striking a held chord tone is never wrong; anything else is. Under
+      // the strike rule the back half of beat 7 belongs to the NEXT bar's
+      // chord, so its tones are exempt there too.
+      final chord = chordRule == ChordRule.strike && early && _beatIndex == 7
+          ? _nextStep?.chordPcs ?? const <int>{}
+          : currentStep.chordPcs;
+      if (!(chordsEnabled && chord.contains(pc))) {
         notesWrong++;
         streak = 0;
         _flash(_wrongFlash, midiNote);
@@ -750,20 +869,24 @@ class ScaleRunController extends ChangeNotifier {
   /// key entirely), or [noExpectedNote] when the next tick starts a count-in.
   int _expectedPcAt(int beat) {
     if (beat <= 7) return currentStep.runPcs[beat];
+    return _nextStep?.runPcs[0] ?? noExpectedNote;
+  }
+
+  /// The step the next bar plays, or null when a count-in comes first.
+  RunStep? get _nextStep {
     final nextIndex = _stepIndex + 1;
-    if (nextIndex < _steps.length) return _steps[nextIndex].runPcs[0];
+    if (nextIndex < _steps.length) return _steps[nextIndex];
     // Past the end of this pass. If another rep of the same key is coming,
-    // the next note is this key's first step again, not the next key's.
-    if (_keyRepsDone + 1 < repsPerKey) return _steps[0].runPcs[0];
+    // the next bar is this key's first step again, not the next key's.
+    if (_keyRepsDone + 1 < repsPerKey) return _steps[0];
     // A key change is next. With the between-key count-in on, the following
-    // tick is count-in beat 1, not a note — there is nothing to be early for.
-    if (keyCountInEnabled) return noExpectedNote;
+    // tick is count-in beat 1, not a bar — there is nothing to be early for.
+    if (keyCountInEnabled) return null;
     final nextKey = KeyCycler(increment).next(_keyPc);
     final harmony = DiatonicHarmony(nextKey, sevenths: sevenths);
-    final next = chordsEnabled
+    return chordsEnabled
         ? harmony.stepFor(progression.degrees.first)
         : harmony.scaleOnlyStep();
-    return next.runPcs[0];
   }
 
   void _flash(Set<int> set, int midiNote) {
@@ -785,12 +908,17 @@ class ScaleRunController extends ChangeNotifier {
   }
 
   /// Hint dots: the chord tones plus the run note expected on the current
-  /// beat (pitch-class based, so they show in every octave).
+  /// beat (pitch-class based, so they show in every octave). Under the strike
+  /// rule the chord is only due on beat 0 (previewed through the count-in),
+  /// so after that its dots would just sit on top of the run.
   bool isTargetHint(int midiNote) {
     final pc = pitchClassOf(midiNote);
     final step = currentStep;
-    if (step.chordPcs.contains(pc)) return true;
     final beat = _phase == RunPhase.running ? _beatIndex : 0;
+    if (step.chordPcs.contains(pc) &&
+        (chordRule == ChordRule.hold || beat == 0)) {
+      return true;
+    }
     return step.runPcs[beat] == pc;
   }
 

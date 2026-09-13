@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scale_runner/quiz/quiz_controller.dart' show KeyFeedback;
 import 'package:scale_runner/runner/scale_run_controller.dart';
 import 'package:scale_runner/theory/scale_running.dart';
 
@@ -252,6 +253,217 @@ void main() {
       expect(c.currentStep.chordPcs, isEmpty);
       expect(c.currentStep.runPcs, [0, 2, 4, 5, 7, 9, 11, 0]);
       expect(c.chordHeldCorrectly, true);
+    });
+  });
+
+  group('strike rule (guitar)', () {
+    // C Major bar first: chord C–E–G, run C D E F G A B C.
+    ScaleRunController strike({
+      ChordProgression? progression,
+      int Function()? sinceBeat,
+      bool keyCountIn = false,
+    }) =>
+        makeController(
+          progression: progression,
+          sinceBeat: sinceBeat,
+          keyCountIn: keyCountIn,
+        )..chordRule = ChordRule.strike;
+
+    test('tones struck one at a time, each released, satisfy the chord', () {
+      final c = strike();
+      countIn(c);
+      c.pressKey(48);
+      c.releaseKey(48);
+      c.pressKey(52);
+      c.releaseKey(52);
+      expect(c.chordHeldCorrectly, false);
+      c.pressKey(55);
+      c.releaseKey(55);
+      expect(c.chordHeldCorrectly, true);
+      c.onBeat(); // leaving beat 0 with nothing held down
+      expect(c.chordMissedThisBar, false);
+      expect(c.chordsCorrect, 1);
+      expect(c.notesMissed, 0);
+    });
+
+    test('a tone never struck in the window is still a chord miss', () {
+      final c = strike();
+      countIn(c);
+      c.pressKey(48);
+      c.pressKey(52);
+      c.onBeat();
+      expect(c.chordMissedThisBar, true);
+      expect(c.chordsCorrect, 0);
+      expect(c.notesMissed, 1);
+    });
+
+    test('hold mode still needs the chord down when beat 0 ends', () {
+      final c = makeController(); // ChordRule.hold
+      countIn(c);
+      c.pressKey(48);
+      c.pressKey(52);
+      c.pressKey(55);
+      c.releaseKey(52);
+      c.onBeat();
+      expect(c.chordMissedThisBar, true);
+    });
+
+    test('the struck set empties at the bar line', () {
+      // Two bars of the same chord: bar 1's strikes must not carry over.
+      final c = strike(progression: const ChordProgression('1-1', [1, 1]));
+      countIn(c);
+      c.pressKey(48);
+      c.pressKey(52);
+      c.pressKey(55);
+      for (final n in [48, 50, 52, 53, 55, 57, 59, 60]) {
+        c.pressKey(n);
+        c.onBeat();
+      }
+      expect(c.beatIndex, 0);
+      expect(c.chordsCorrect, 1);
+      expect(c.chordHeldCorrectly, false);
+      c.pressKey(48);
+      c.onBeat();
+      expect(c.chordMissedThisBar, true);
+    });
+
+    test('back-half-of-beat-7 strikes credit the next bar and are not wrong',
+        () {
+      var since = 0;
+      final c = strike(sinceBeat: () => since);
+      countIn(c);
+      c.pressKey(52); // bar 1's chord, E and G (C is the run note)
+      c.pressKey(55);
+      for (var beat = 0; beat < 7; beat++) {
+        c.pressKey(c.currentStep.runPcs[beat] + 48);
+        c.onBeat();
+      }
+      expect(c.beatIndex, 7);
+      since = 500; // back half of a 600ms beat: early for the next bar
+      // Bar 2 is A minor (A–C–E). A is not in C major, so under the old rule
+      // it would have been a wrong note here.
+      c.pressKey(57); // A: early hit on the next bar's beat 0
+      c.pressKey(60); // C
+      c.pressKey(64); // E
+      expect(c.notesWrong, 0);
+      since = 0;
+      c.onBeat(); // rollover into A minor's bar
+      expect(c.beatIndex, 0);
+      expect(c.currentStep.chordPcs, {9, 0, 4});
+      expect(c.chordHeldCorrectly, true);
+      c.onBeat();
+      expect(c.chordMissedThisBar, false);
+      expect(c.chordsCorrect, 2);
+    });
+
+    test('a strike in the last count-in beat, within grace, counts', () {
+      var since = 0;
+      final c = strike(sinceBeat: () => since);
+      c.start();
+      for (var i = 0; i < 4; i++) {
+        c.onBeat();
+      }
+      expect(c.beatsUntilDownbeat, 1);
+      since = 500; // 100ms before the downbeat: within grace
+      c.tapCell(48);
+      c.tapCell(52);
+      c.tapCell(55);
+      expect(c.latchedNotes, {48, 52, 55});
+      since = 0;
+      c.onBeat(); // downbeat
+      expect(c.running, true);
+      expect(c.chordHeldCorrectly, true);
+      expect(c.latchedNotes, {48, 52, 55});
+      c.onBeat(); // leaving beat 0
+      expect(c.chordsCorrect, 1);
+      expect(c.latchedNotes, isEmpty);
+    });
+
+    test('a strike in the last count-in beat, outside grace, does not count',
+        () {
+      var since = 0;
+      final c = strike(sinceBeat: () => since);
+      c.start();
+      for (var i = 0; i < 4; i++) {
+        c.onBeat();
+      }
+      since = 100; // 500ms early: count-in noodling
+      c.tapCell(52);
+      expect(c.latchedNotes, isEmpty);
+      since = 0;
+      c.onBeat();
+      expect(c.chordHeldCorrectly, false);
+    });
+
+    test('tapCell lights chord tones through beat 0 and lets go on beat 1',
+        () {
+      final c = strike();
+      countIn(c);
+      c.tapCell(52); // E: chord tone, not beat 0's run note
+      c.tapCell(50); // D: neither — judged wrong, not lit
+      expect(c.latchedNotes, {52});
+      expect(c.feedbackFor(52), KeyFeedback.pressed);
+      expect(c.feedbackFor(50), KeyFeedback.wrong);
+      expect(c.notesWrong, 1);
+      c.tapCell(52); // second tap on a lit note: nothing happens
+      expect(c.notesWrong, 1);
+      c.onBeat(); // beat 1
+      expect(c.latchedNotes, isEmpty);
+      expect(c.feedbackFor(52), KeyFeedback.idle);
+    });
+
+    test('tapCell on a run note judges it and does not keep it lit', () {
+      final c = strike();
+      countIn(c);
+      c.onBeat(); // beat 1 expects D
+      c.tapCell(50);
+      expect(c.notesOnBeat, 1);
+      expect(c.latchedNotes, isEmpty);
+      expect(c.feedbackFor(50), KeyFeedback.correct);
+    });
+
+    test('nothing struck on beat 7 counts when a key count-in comes next', () {
+      var since = 0;
+      final c = strike(
+        progression: const ChordProgression('1', [1]),
+        sinceBeat: () => since,
+        keyCountIn: true,
+      );
+      countIn(c);
+      for (var beat = 0; beat < 7; beat++) {
+        c.onBeat();
+      }
+      since = 500;
+      c.tapCell(67); // G: the next key's root, but a count-in is next
+      expect(c.latchedNotes, isEmpty);
+      since = 0;
+      c.onBeat(); // closes the bar, count-in beat 1 of G major
+      expect(c.isKeyTransition, true);
+      while (c.beatsUntilDownbeat > 1) {
+        c.onBeat();
+      }
+      since = 500;
+      c.tapCell(67); // G
+      c.tapCell(71); // B
+      c.tapCell(74); // D
+      expect(c.latchedNotes, {67, 71, 74});
+      since = 0;
+      c.onBeat(); // G major downbeat
+      expect(c.keyPc, 7);
+      expect(c.chordHeldCorrectly, true);
+    });
+
+    test('hint dots drop the chord after beat 0 under the strike rule', () {
+      final c = strike();
+      countIn(c);
+      expect(c.isTargetHint(52), true); // E on beat 0
+      c.onBeat(); // beat 1 expects D
+      expect(c.isTargetHint(52), false);
+      expect(c.isTargetHint(50), true);
+      final hold = makeController();
+      countIn(hold);
+      hold.onBeat();
+      expect(hold.isTargetHint(52), true);
     });
   });
 

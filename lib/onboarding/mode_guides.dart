@@ -186,7 +186,7 @@ const Map<GuideMode, ModeGuide> modeGuides = {
   GuideMode.scaleRunning: ModeGuide(
     title: 'Scale Running',
     lines: [
-      'Hold the chord with one hand, run its mode with the other.',
+      'Play the chord on beat one, then run its mode.',
       'One note per click, eight notes per bar.',
       'A one-bar count-in leads into each new key.',
       'Green is on the beat, amber is close, red is off.',
