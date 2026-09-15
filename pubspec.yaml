@@ -28,7 +28,7 @@ dependencies:
 
   # In-app purchases via RevenueCat — wraps StoreKit + Google Play Billing,
   # handles server-side receipt validation and the "pro" entitlement.
-  purchases_flutter: ^9.15.0
+  purchases_flutter: ^10.12.0
   wakelock_plus: ^1.5.2
   package_info_plus: ^9.0.1
   share_plus: ^12.0.2
